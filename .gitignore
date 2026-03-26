@@ -1,0 +1,9 @@
+/build/
+/out/
+/cmake-build-*/
+/.vs/
+/.vscode/
+/.idea/
+*.user
+*.suo
+CMakeSettings.json
