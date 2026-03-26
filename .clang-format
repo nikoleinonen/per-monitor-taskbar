@@ -1,6 +1,0 @@
-BasedOnStyle: LLVM
-ColumnLimit: 100
-AllowShortFunctionsOnASingleLine: Empty
-PointerAlignment: Left
-SortIncludes: CaseInsensitive
-IndentCaseLabels: false

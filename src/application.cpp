@@ -3,7 +3,6 @@
 #include "registry_key.h"
 #include "settings_window.h"
 #include "taskbar.h"
-#include "resource.h"
 
 #include <shellapi.h>
 
@@ -53,6 +52,7 @@ bool Application::Init(HINSTANCE hInstance) {
 }
 
 int Application::Run() {
+  taskbar::RecoverFromCrash();
   AddTrayIcon();
   taskbar::ApplyPreferences();
   SetTimer(hostWindow_, kEnforceTimerId, 50, nullptr);
@@ -110,6 +110,8 @@ void Application::ShowTrayMenu() {
     return;
 
   AppendMenuW(menu, MF_STRING, 1, L"Settings\u2026");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, 3, L"Reset everything");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, 2, L"Exit");
 
@@ -172,6 +174,11 @@ LRESULT CALLBACK Application::HostWndProc(HWND hwnd, UINT msg, WPARAM wParam,
   }
 
   switch (msg) {
+  case WM_ENDSESSION:
+    if (wParam)
+      taskbar::RestoreAll();
+    return 0;
+
   case WM_DESTROY:
     PostQuitMessage(0);
     return 0;
@@ -216,6 +223,12 @@ LRESULT CALLBACK Application::HostWndProc(HWND hwnd, UINT msg, WPARAM wParam,
       return 0;
     case 2:
       DestroyWindow(hwnd);
+      return 0;
+    case 3:
+      taskbar::FactoryReset();
+      MessageBoxW(hwnd,
+                  L"All taskbars have been restored and preferences cleared.",
+                  L"Per-Monitor Taskbar", MB_OK | MB_ICONINFORMATION);
       return 0;
     }
     return 0;

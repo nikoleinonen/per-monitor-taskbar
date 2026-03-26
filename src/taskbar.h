@@ -24,6 +24,10 @@ void SavePreference(const std::wstring& deviceName, bool autoHide);
 bool GetGlobalAutoHide();
 void SetGlobalAutoHide(bool autoHide);
 
+// If a previous session crashed while the primary taskbar was hidden,
+// detect the leftover state and restore it.  Call once at startup.
+void RecoverFromCrash();
+
 // Apply saved preferences.  Turns global auto-hide OFF and builds the
 // internal list of taskbar windows that this app will manually hide.
 void ApplyPreferences();
@@ -34,5 +38,10 @@ void Enforce();
 
 // Show every hidden taskbar and release control (call before exit).
 void RestoreAll();
+
+// Nuclear reset: restore all taskbars, turn off global auto-hide,
+// delete all saved preferences.  Leaves the system as if the app
+// was never installed.
+void FactoryReset();
 
 } // namespace taskbar

@@ -14,6 +14,7 @@ namespace taskbar {
 
 namespace {
 
+constexpr const wchar_t* kAppKey = L"Software\\PerMonitorTaskbar";
 constexpr const wchar_t* kPrefsKey =
     L"Software\\PerMonitorTaskbar\\Monitors";
 constexpr int kHotZonePixels = 48;
@@ -124,10 +125,12 @@ void DoHide(ManagedTaskbar& mt) {
 
 void DoShow(ManagedTaskbar& mt) {
   if (mt.isPrimary) {
-    LONG_PTR ex = GetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE);
-    ex &= ~WS_EX_TRANSPARENT;
-    SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE, ex);
     SetLayeredWindowAttributes(mt.hwnd, 0, 255, LWA_ALPHA);
+    SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE, mt.originalExStyle);
+    SetWindowPos(mt.hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    RedrawWindow(mt.hwnd, nullptr, nullptr,
+                 RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
   } else {
     int newTop = mt.monitorBounds.bottom - mt.fullHeight;
     SetWindowPos(mt.hwnd, HWND_TOPMOST, mt.monitorBounds.left, newTop, 0, 0,
@@ -138,11 +141,35 @@ void DoShow(ManagedTaskbar& mt) {
 
 void DoRestore(ManagedTaskbar& mt) {
   if (mt.isPrimary) {
+    // Make the window opaque while still layered, THEN strip the style.
+    // Removing WS_EX_LAYERED while alpha is 0 can leave the window blank.
+    SetLayeredWindowAttributes(mt.hwnd, 0, 255, LWA_ALPHA);
     SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE, mt.originalExStyle);
     SetWindowPos(mt.hwnd, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    RedrawWindow(mt.hwnd, nullptr, nullptr,
+                 RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
   } else if (mt.hidden) {
     DoShow(mt);
+  }
+}
+
+// -- dirty-flag bookkeeping --------------------------------------------------
+
+void MarkPrimaryDirty(LONG_PTR originalExStyle) {
+  RegKey key;
+  if (key.Create(HKEY_CURRENT_USER, kAppKey)) {
+    key.WriteDword(L"PrimaryManaged", 1);
+    key.WriteDword(L"PrimaryOrigExStyle",
+                   static_cast<DWORD>(originalExStyle));
+  }
+}
+
+void ClearPrimaryDirty() {
+  RegKey key;
+  if (key.Open(HKEY_CURRENT_USER, kAppKey, KEY_WRITE)) {
+    key.WriteDword(L"PrimaryManaged", 0);
+    key.DeleteValue(L"PrimaryOrigExStyle");
   }
 }
 
@@ -178,6 +205,35 @@ std::vector<DisplayState> QueryDisplays() {
   }
 
   return result;
+}
+
+void RecoverFromCrash() {
+  RegKey key;
+  if (!key.Open(HKEY_CURRENT_USER, kAppKey))
+    return;
+
+  auto flag = key.ReadDword(L"PrimaryManaged");
+  if (!flag.has_value() || *flag == 0)
+    return;
+
+  auto origStyle = key.ReadDword(L"PrimaryOrigExStyle");
+  if (!origStyle.has_value())
+    return;
+
+  HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
+  if (!tray) {
+    ClearPrimaryDirty();
+    return;
+  }
+
+  SetLayeredWindowAttributes(tray, 0, 255, LWA_ALPHA);
+  SetWindowLongPtrW(tray, GWL_EXSTYLE,
+                    static_cast<LONG_PTR>(*origStyle));
+  SetWindowPos(tray, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+  RedrawWindow(tray, nullptr, nullptr,
+               RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
+  ClearPrimaryDirty();
 }
 
 void SavePreference(const std::wstring& deviceName, bool autoHide) {
@@ -251,6 +307,8 @@ void ApplyPreferences() {
             g_managed.push_back({tw.hwnd, mi.rcMonitor, rc.bottom - rc.top,
                                  false, mon.isPrimary, origEx});
             g_active = true;
+            if (mon.isPrimary)
+              MarkPrimaryDirty(origEx);
           }
         }
         break;
@@ -308,6 +366,28 @@ void RestoreAll() {
   }
   g_managed.clear();
   g_active = false;
+  ClearPrimaryDirty();
+}
+
+void FactoryReset() {
+  RestoreAll();
+  SetGlobalAutoHide(false);
+
+  // Brute-force restore the primary taskbar in case RestoreAll missed it.
+  HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
+  if (tray) {
+    LONG_PTR ex = GetWindowLongPtrW(tray, GWL_EXSTYLE);
+    ex &= ~(WS_EX_LAYERED | WS_EX_TRANSPARENT);
+    SetWindowLongPtrW(tray, GWL_EXSTYLE, ex);
+    SetLayeredWindowAttributes(tray, 0, 255, LWA_ALPHA);
+    SetWindowPos(tray, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    RedrawWindow(tray, nullptr, nullptr,
+                 RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
+  }
+
+  // Delete all saved preferences.
+  RegDeleteTreeW(HKEY_CURRENT_USER, kAppKey);
 }
 
 } // namespace taskbar
