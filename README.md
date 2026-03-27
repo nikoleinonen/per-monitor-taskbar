@@ -8,19 +8,25 @@ I built this with AI for my own setup due to getting an OLED monitor and decided
 
 ## Screenshots & demo
 
-**Settings panel** — configure auto-hide per monitor from the tray icon.
+**Settings panel** - configure auto-hide per monitor from the tray icon.
 
 [![Settings panel](https://i.imgur.com/r0PxjV9.png)](https://imgur.com/r0PxjV9)
 
-**Per-Monitor Taskbar** — hovering the auto-hide strip: taskbar shows and hides instantaneously. (applications does not fully fill the monitor)
+**Per-Monitor Taskbar** - hovering the auto-hide strip: taskbar shows and hides instantaneously. (applications does not fully fill the monitor)
 
 [![Responsive per-monitor auto-hide](https://i.imgur.com/2ZvLjhj.gif)](https://imgur.com/2ZvLjhj)
 
-**Windows built-in auto-hide** — same kind of interaction, but noticeably slower and less responsive garbage. (applications fully fills the monitor)
+**Windows built-in auto-hide** - same kind of interaction, but noticeably slower and less responsive garbage. (applications fully fills the monitor)
 
 [![Windows default auto-hide comparison](https://i.imgur.com/5ReArXZ.gif)](https://imgur.com/5ReArXZ)
 
-## Build
+## Download
+
+Grab the latest `per-monitor-taskbar.exe` from the [Releases page](https://github.com/nikoleinonen/per-monitor-taskbar/releases/latest) and run it - no installation needed.
+
+> **Note:** Windows SmartScreen may show a warning the first time you run it. Click **More info -> Run anyway** to proceed. This is expected for small unsigned utilities and code-signing certificates as far as I know cost money (and this is mainly just for myself, but made open-source). If you'd like to verify the file before running it, you can scan it on [VirusTotal](https://www.virustotal.com/gui/home/upload). Or, if you prefer, you can review the source code and build the project yourself.
+
+## Build from source
 
 Requires **CMake 3.16+** and a Windows C++ toolchain (Visual Studio 2022+ or MinGW-w64). If you do not have CMake yet, get it from the [CMake download page](https://cmake.org/download/) and run the **Windows x64 Installer**. Any recent release is probably fine; this project is built and tested with **CMake 4.3.0**, but **3.16+** is all that CMakeLists requires.
 
@@ -41,8 +47,6 @@ CMake splits the work into two steps:
 The `-G` name must match your installed Visual Studio version (for example **Visual Studio 17 2022** for VS 2022). If unsure, run `cmake -G` to list generators.
 
 The binary is placed at `build/Release/per-monitor-taskbar.exe`.
-
-Feel free to make a shortcut to your desktop or what ever to this .exe to have an easy access.
 
 ## Usage
 
