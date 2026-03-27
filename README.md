@@ -6,6 +6,20 @@ Windows only offers a single global toggle for taskbar auto-hide. This tool work
 
 I built this with AI for my own setup due to getting an OLED monitor and decided to make it public in case others find it useful. **Use at your own risk.** This modifies taskbar window styles at runtime. I am not liable for any issues or damages - if something breaks, see the [Troubleshooting](#troubleshooting) section below if that helps!
 
+## Screenshots & demo
+
+**Settings panel** — configure auto-hide per monitor from the tray icon.
+
+[![Settings panel](https://i.imgur.com/r0PxjV9.png)](https://imgur.com/r0PxjV9)
+
+**Per-Monitor Taskbar** — hovering the auto-hide strip: taskbar shows and hides instantaneously. (applications does not fully fill the monitor)
+
+[![Responsive per-monitor auto-hide](https://i.imgur.com/2ZvLjhj.gif)](https://imgur.com/2ZvLjhj)
+
+**Windows built-in auto-hide** — same kind of interaction, but noticeably slower and less responsive garbage. (applications fully fills the monitor)
+
+[![Windows default auto-hide comparison](https://i.imgur.com/5ReArXZ.gif)](https://imgur.com/5ReArXZ)
+
 ## Build
 
 Requires **CMake 3.16+** and a Windows C++ toolchain (Visual Studio 2022+ or MinGW-w64). If you do not have CMake yet, get it from the [CMake download page](https://cmake.org/download/) and run the **Windows x64 Installer**. Any recent release is probably fine; this project is built and tested with **CMake 4.3.0**, but **3.16+** is all that CMakeLists requires.
