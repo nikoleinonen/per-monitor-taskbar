@@ -2,7 +2,7 @@
 
 An extremely lightweight single-purpose Windows tray utility that gives **per-monitor taskbar auto-hide** feature with much faster and more responsive show/hide behavior than the Windows built-in setting.
 
-Windows exposes only a single global taskbar auto-hide toggle. This application applies auto-hide selectively per display by adjusting taskbar window styles and positions at runtime, while keeping the system-wide auto-hide option off. Typical use cases include hiding the taskbar on an OLED panel to reduce burn-in risk while leaving it visible on other monitors.
+Windows exposes only a single global taskbar auto-hide toggle. This application applies auto-hide selectively per display by adjusting taskbar window styles at runtime, while keeping the system-wide auto-hide option off. Typical use cases include hiding the taskbar on an OLED panel to reduce burn-in risk while leaving it visible on other monitors.
 
 I made this tool for myself after getting an OLED monitor and decided to make it public in case others find it useful too.
 
@@ -105,7 +105,7 @@ The app turns **off** the global Windows auto-hide state (`SHAppBarMessage` / ap
 | Taskbar type | Window class | Hiding approach |
 | ------------ | ------------ | --------------- |
 | Primary | `Shell_TrayWnd` | Extended styles `WS_EX_LAYERED` and `WS_EX_TRANSPARENT` with alpha 0 so the bar is invisible and click-through. The shell resists moving the primary bar, so transparency is used instead of repositioning. |
-| Secondary | `Shell_SecondaryTrayWnd` | Positioned so only about **2 px** remains visible at the bottom edge of the monitor, similar to native auto-hide. |
+| Secondary | `Shell_SecondaryTrayWnd` | Same in-place transparency as primary. Sliding a secondary bar below the monitor edge would paint it onto any display stacked underneath. |
 
 
 A **50 ms** timer polls the cursor. If the pointer lies in a **48 px** hot zone above the bottom edge of a monitor whose taskbar is managed, the bar is shown (styles restored and redrawn). When the cursor leaves that zone and is not over the taskbar, the bar is hidden again.
@@ -116,19 +116,19 @@ Preferences are stored in the registry:
 
 ### Crash recovery
 
-Before altering the primary taskbar, the app records a dirty flag and the original extended style under `HKCU\Software\PerMonitorTaskbar` (`PrimaryManaged`, `PrimaryOrigExStyle`). On the next startup, if the dirty flag is still set, those values are used to restore the primary taskbar.
+Before altering any taskbar, the app records a dirty flag under `HKCU\Software\PerMonitorTaskbar` (`PrimaryManaged`). The original extended style of the primary bar is saved as `PrimaryOrigExStyle`. On the next startup, leftover click-through styles are cleared and any secondary bar that 1.0 slid off-screen is snapped back. If the dirty flag is still set, the primary bar is also restored from the saved style.
 
 Additional safeguards:
 
 - `SetUnhandledExceptionFilter` calls full taskbar restore before the process terminates on an unhandled exception.
 - `WM_ENDSESSION` restores taskbars on shutdown or logoff when applicable.
-- **Reset everything** performs a forced restore of the primary bar and deletes the app’s registry tree.
+- **Reset everything** undoes leftover click-through or off-screen taskbar state and deletes the app’s registry tree.
 
 ## Limitations
 
 - **Work area:** On monitors where auto-hide is active through this tool, maximized windows will not reclaim the full height; a thin, taskbar-height strip will remain at the bottom. I find this more of a feature than a bug, but opinions may vary. This does not apply to fullscreen applications, which will work as usual.
 - **Multi-taskbar setup:** Per-monitor behavior requires a taskbar on each display (Windows **Show taskbar on all displays**).
-- **Force-kill and removed binary:** If the process is terminated forcibly and the executable is deleted before a normal restart of the app, the primary taskbar can remain invisible until Explorer is restarted or the system is rebooted.
+- **Force-kill and removed binary:** If the process is terminated forcibly and the executable is deleted before a normal restart of the app, a managed taskbar can remain invisible until Explorer is restarted or the system is rebooted.
 
 ## Troubleshooting
 

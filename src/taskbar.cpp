@@ -89,9 +89,7 @@ std::wstring BuildDisplayLabel(const monitor::Info& mon) {
 struct ManagedTaskbar {
   HWND hwnd;
   RECT monitorBounds;
-  int fullHeight;
   bool hidden;
-  bool isPrimary;
   LONG_PTR originalExStyle;
 };
 
@@ -101,67 +99,119 @@ bool g_active = false;
 bool IsCursorInHotZone(const POINT& pt, const ManagedTaskbar& mt) {
   if (pt.x < mt.monitorBounds.left || pt.x >= mt.monitorBounds.right)
     return false;
-  return pt.y >= mt.monitorBounds.bottom - kHotZonePixels;
+  // Stay inside this monitor. A stacked display below shares this bottom
+  // edge, so y >= bottom - hotZone without an upper bound would treat the
+  // entire monitor below as a reveal zone.
+  return pt.y >= mt.monitorBounds.bottom - kHotZonePixels &&
+         pt.y < mt.monitorBounds.bottom;
 }
 
-// Primary taskbar: the shell protects its position, so we hide it by making
-// it fully transparent and click-through.
-// Secondary taskbars: the shell doesn't fight, so we simply slide them
-// off-screen (2 px visible at the edge, matching native auto-hide).
+void RestoreWindowVisuals(HWND hwnd, std::optional<LONG_PTR> originalExStyle) {
+  LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  // Make the window opaque while still layered, THEN change styles.
+  // Removing WS_EX_LAYERED while alpha is 0 can leave the window blank.
+  if (ex & WS_EX_LAYERED)
+    SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+
+  LONG_PTR restored;
+  if (originalExStyle.has_value()) {
+    restored = *originalExStyle;
+  } else {
+    // Do not strip WS_EX_LAYERED without the saved original. Explorer uses
+    // it for acrylic; this app's hide adds WS_EX_TRANSPARENT on top.
+    restored = ex & ~WS_EX_TRANSPARENT;
+  }
+  SetWindowLongPtrW(hwnd, GWL_EXSTYLE, restored);
+  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+  RedrawWindow(hwnd, nullptr, nullptr,
+               RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
+}
+
+void RestoreIfClickThrough(HWND hwnd) {
+  LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  if (ex & WS_EX_TRANSPARENT)
+    RestoreWindowVisuals(hwnd, std::nullopt);
+}
+
+void RestoreSecondaryIfSlidOff(HWND hwnd) {
+  wchar_t cls[64];
+  if (GetClassNameW(hwnd, cls, 64) == 0)
+    return;
+  if (_wcsicmp(cls, L"Shell_SecondaryTrayWnd") != 0)
+    return;
+
+  RECT rc;
+  if (!GetWindowRect(hwnd, &rc))
+    return;
+
+  HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO mi = {sizeof(mi)};
+  if (!GetMonitorInfoW(mon, &mi))
+    return;
+
+  const int height = rc.bottom - rc.top;
+  if (height <= 0)
+    return;
+
+  // 1.0 hid secondaries by sliding them so only ~2 px stayed on-screen.
+  // Only snap back a bar that is hanging off the bottom edge.
+  if (rc.top < mi.rcMonitor.bottom - 8)
+    return;
+
+  SetWindowPos(hwnd, HWND_TOPMOST, mi.rcMonitor.left,
+               mi.rcMonitor.bottom - height, 0, 0,
+               SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+void UndoLeftoverTaskbarState() {
+  for (const auto& tw : FindTaskbars()) {
+    RestoreIfClickThrough(tw.hwnd);
+    RestoreSecondaryIfSlidOff(tw.hwnd);
+  }
+}
+
+bool IsEffectivelyHidden(HWND hwnd) {
+  LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  if (!(ex & WS_EX_LAYERED) || !(ex & WS_EX_TRANSPARENT))
+    return false;
+  BYTE alpha = 255;
+  DWORD flags = 0;
+  if (!GetLayeredWindowAttributes(hwnd, nullptr, &alpha, &flags))
+    return false;
+  return (flags & LWA_ALPHA) != 0 && alpha == 0;
+}
+
+// Hide in place: transparency + click-through. Sliding a secondary bar
+// below the monitor edge paints it on any display stacked underneath.
 
 void DoHide(ManagedTaskbar& mt) {
-  if (mt.isPrimary) {
-    LONG_PTR ex = GetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE);
-    SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE,
-                      ex | WS_EX_LAYERED | WS_EX_TRANSPARENT);
-    SetLayeredWindowAttributes(mt.hwnd, 0, 0, LWA_ALPHA);
-  } else {
-    int newTop = mt.monitorBounds.bottom - 2;
-    SetWindowPos(mt.hwnd, nullptr, mt.monitorBounds.left, newTop, 0, 0,
-                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-  }
+  LONG_PTR ex = GetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE);
+  SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE,
+                    ex | WS_EX_LAYERED | WS_EX_TRANSPARENT);
+  SetLayeredWindowAttributes(mt.hwnd, 0, 0, LWA_ALPHA);
   mt.hidden = true;
 }
 
 void DoShow(ManagedTaskbar& mt) {
-  if (mt.isPrimary) {
-    SetLayeredWindowAttributes(mt.hwnd, 0, 255, LWA_ALPHA);
-    SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE, mt.originalExStyle);
-    SetWindowPos(mt.hwnd, nullptr, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-    RedrawWindow(mt.hwnd, nullptr, nullptr,
-                 RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
-  } else {
-    int newTop = mt.monitorBounds.bottom - mt.fullHeight;
-    SetWindowPos(mt.hwnd, HWND_TOPMOST, mt.monitorBounds.left, newTop, 0, 0,
-                 SWP_NOSIZE | SWP_NOACTIVATE);
-  }
+  RestoreWindowVisuals(mt.hwnd, mt.originalExStyle);
   mt.hidden = false;
 }
 
 void DoRestore(ManagedTaskbar& mt) {
-  if (mt.isPrimary) {
-    // Make the window opaque while still layered, THEN strip the style.
-    // Removing WS_EX_LAYERED while alpha is 0 can leave the window blank.
-    SetLayeredWindowAttributes(mt.hwnd, 0, 255, LWA_ALPHA);
-    SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE, mt.originalExStyle);
-    SetWindowPos(mt.hwnd, nullptr, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-    RedrawWindow(mt.hwnd, nullptr, nullptr,
-                 RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
-  } else if (mt.hidden) {
-    DoShow(mt);
-  }
+  RestoreWindowVisuals(mt.hwnd, mt.originalExStyle);
+  mt.hidden = false;
 }
 
 // -- dirty-flag bookkeeping --------------------------------------------------
 
-void MarkPrimaryDirty(LONG_PTR originalExStyle) {
+void MarkManagedDirty(bool isPrimary, LONG_PTR originalExStyle) {
   RegKey key;
   if (key.Create(HKEY_CURRENT_USER, kAppKey)) {
     key.WriteDword(L"PrimaryManaged", 1);
-    key.WriteDword(L"PrimaryOrigExStyle",
-                   static_cast<DWORD>(originalExStyle));
+    if (isPrimary)
+      key.WriteDword(L"PrimaryOrigExStyle",
+                     static_cast<DWORD>(originalExStyle));
   }
 }
 
@@ -208,6 +258,11 @@ std::vector<DisplayState> QueryDisplays() {
 }
 
 void RecoverFromCrash() {
+  // Always undo leftover click-through / 1.0 slide, even if the dirty flag
+  // was not written. Otherwise ApplyPreferences can capture a broken style
+  // as "original" and restore would keep the bar invisible.
+  UndoLeftoverTaskbarState();
+
   RegKey key;
   if (!key.Open(HKEY_CURRENT_USER, kAppKey))
     return;
@@ -217,22 +272,10 @@ void RecoverFromCrash() {
     return;
 
   auto origStyle = key.ReadDword(L"PrimaryOrigExStyle");
-  if (!origStyle.has_value())
-    return;
-
   HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
-  if (!tray) {
-    ClearPrimaryDirty();
-    return;
-  }
+  if (tray && origStyle.has_value())
+    RestoreWindowVisuals(tray, static_cast<LONG_PTR>(*origStyle));
 
-  SetLayeredWindowAttributes(tray, 0, 255, LWA_ALPHA);
-  SetWindowLongPtrW(tray, GWL_EXSTYLE,
-                    static_cast<LONG_PTR>(*origStyle));
-  SetWindowPos(tray, nullptr, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-  RedrawWindow(tray, nullptr, nullptr,
-               RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
   ClearPrimaryDirty();
 }
 
@@ -299,17 +342,12 @@ void ApplyPreferences() {
 
     for (const auto& tw : taskbars) {
       if (tw.monitor == mon.handle) {
-        RECT rc;
-        if (GetWindowRect(tw.hwnd, &rc)) {
-          MONITORINFO mi = {sizeof(mi)};
-          if (GetMonitorInfoW(mon.handle, &mi)) {
-            LONG_PTR origEx = GetWindowLongPtrW(tw.hwnd, GWL_EXSTYLE);
-            g_managed.push_back({tw.hwnd, mi.rcMonitor, rc.bottom - rc.top,
-                                 false, mon.isPrimary, origEx});
-            g_active = true;
-            if (mon.isPrimary)
-              MarkPrimaryDirty(origEx);
-          }
+        MONITORINFO mi = {sizeof(mi)};
+        if (GetMonitorInfoW(mon.handle, &mi)) {
+          LONG_PTR origEx = GetWindowLongPtrW(tw.hwnd, GWL_EXSTYLE);
+          g_managed.push_back({tw.hwnd, mi.rcMonitor, false, origEx});
+          g_active = true;
+          MarkManagedDirty(mon.isPrimary, origEx);
         }
         break;
       }
@@ -338,16 +376,8 @@ void Enforce() {
     if (mt.hidden) {
       if (inHotZone)
         DoShow(mt);
-
-      // Secondary: re-hide if the shell snapped the taskbar back.
-      if (!mt.isPrimary && !inHotZone) {
-        RECT rc;
-        if (GetWindowRect(mt.hwnd, &rc)) {
-          int expectedTop = mt.monitorBounds.bottom - 2;
-          if (rc.top < expectedTop - 4)
-            DoHide(mt);
-        }
-      }
+      else if (!IsEffectivelyHidden(mt.hwnd))
+        DoHide(mt);
     } else {
       RECT rc;
       GetWindowRect(mt.hwnd, &rc);
@@ -373,18 +403,9 @@ void FactoryReset() {
   RestoreAll();
   SetGlobalAutoHide(false);
 
-  // Brute-force restore the primary taskbar in case RestoreAll missed it.
-  HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
-  if (tray) {
-    LONG_PTR ex = GetWindowLongPtrW(tray, GWL_EXSTYLE);
-    ex &= ~(WS_EX_LAYERED | WS_EX_TRANSPARENT);
-    SetWindowLongPtrW(tray, GWL_EXSTYLE, ex);
-    SetLayeredWindowAttributes(tray, 0, 255, LWA_ALPHA);
-    SetWindowPos(tray, nullptr, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-    RedrawWindow(tray, nullptr, nullptr,
-                 RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
-  }
+  // Undo leftover click-through / 1.0 slide if RestoreAll missed a bar.
+  // Do not strip WS_EX_LAYERED from healthy Explorer taskbars.
+  UndoLeftoverTaskbarState();
 
   // Delete all saved preferences.
   RegDeleteTreeW(HKEY_CURRENT_USER, kAppKey);
