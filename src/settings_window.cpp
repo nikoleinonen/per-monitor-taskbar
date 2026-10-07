@@ -89,7 +89,7 @@ void OnCreate(HWND wnd) {
     y += s(26);
 
     HWND full = CreateWindowExW(
-        0, L"BUTTON", L"Maximized windows use the full screen",
+        0, L"BUTTON", L"Maximized windows cover the taskbar area",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, pad + s(18), y,
         contentW - s(18), s(22), wnd,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(fullId)), hInst, nullptr);
