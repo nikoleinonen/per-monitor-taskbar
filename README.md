@@ -33,7 +33,7 @@ I made this tool for myself after getting an OLED monitor and decided to make it
 
 ## Download
 
-Prebuilt binaries are published on the [Releases](https://github.com/nikoleinonen/per-monitor-taskbar/releases/latest) page. Download `per-monitor-taskbar.exe` and run it; there is no installer.
+Prebuilt binaries are published on the [Releases](https://github.com/nikoleinonen/per-monitor-taskbar/releases/latest) page. Download `PMT-1.2.exe` and run it; there is no installer.
 
 **SmartScreen:** Unsigned executables often trigger a first-run warning. Click **More info**, then **Run anyway**, or build from source and compare hashes if you prefer. Third-party scanners such as [VirusTotal](https://www.virustotal.com/gui/home/upload) can be used for an additional check.
 
@@ -73,12 +73,12 @@ Prebuilt binaries are published on the [Releases](https://github.com/nikoleinone
 3. **Output:** 
    
     ```text
-   build/Release/per-monitor-taskbar.exe
+   build/Release/PMT-1.2.exe
     ```
 
 ## Usage
 
-1. Start `per-monitor-taskbar.exe`. An icon appears in the notification area.
+1. Start `PMT-1.2.exe`. An icon appears in the notification area.
 2. **Left-click** the icon to open Settings, or **right-click** for the context menu.
 3. Enable **Auto-hide** per monitor as needed.
 4. Optionally turn on **Maximized windows cover the taskbar area** to fill that display fully. If its off, maximized windows do not cover the taskbar area.
@@ -97,7 +97,7 @@ There is no separate uninstaller. To remove the program cleanly:
 2. Choose **Reset everything** so taskbars are restored and preferences under `HKCU\Software\PerMonitorTaskbar` are cleared.
 3. If you enabled **Start with Windows**, open **Settings** from the tray (left-click), turn that option off, and click **Apply** so the startup entry is removed.
 4. **Right-click** the tray icon again and choose **Exit**.
-5. Delete `per-monitor-taskbar.exe` from your computer.
+5. Delete `PMT-1.2.exe` from your computer.
 
 ## How it works
 

@@ -1,4 +1,5 @@
 #include <windows.h>
+#include "pmt_version.h"
 #include "resource.h"
 
 // Embed application manifest
@@ -9,8 +10,8 @@ IDI_TRAY_DARK ICON "tray_dark.ico"
 IDI_TRAY_LIGHT ICON "tray_light.ico"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 1,1,0,0
-PRODUCTVERSION 1,1,0,0
+FILEVERSION PMT_VERSION_MAJOR,PMT_VERSION_MINOR,PMT_VERSION_PATCH,0
+PRODUCTVERSION PMT_VERSION_MAJOR,PMT_VERSION_MINOR,PMT_VERSION_PATCH,0
 FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
 FILEFLAGS 0
 FILEOS VOS_NT_WINDOWS32
@@ -23,11 +24,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "per-monitor-taskbar"
       VALUE "FileDescription", "Per-monitor taskbar auto-hide"
-      VALUE "FileVersion", "1.1.0.0"
+      VALUE "FileVersion", PMT_VERSION_STR
       VALUE "InternalName", "per-monitor-taskbar"
-      VALUE "OriginalFilename", "per-monitor-taskbar.exe"
+      VALUE "OriginalFilename", PMT_ORIGINAL_FILENAME
       VALUE "ProductName", "Per-Monitor Taskbar"
-      VALUE "ProductVersion", "1.1.0.0"
+      VALUE "ProductVersion", PMT_VERSION_STR
     END
   END
   BLOCK "VarFileInfo"
