@@ -12,15 +12,19 @@ I made this tool for myself after getting an OLED monitor and decided to make it
 
 **Settings** - Per-display auto-hide and optional start with windows toggle.
 
-[![Settings](https://i.imgur.com/r0PxjV9.png)](https://imgur.com/r0PxjV9)
+[![Settings](https://i.imgur.com/z2vATCs.png)](https://imgur.com/z2vATCs)
 
-**This tool** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will not fully extend into the taskbar area unless **Maximized windows cover the taskbar area** is enabled for that display. (Fullscreen applications work normally.)
+**This tool - Maximized windows cover the taskbar area OFF** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will not fully extend into the taskbar area.
 
-[![Per-monitor auto-hide](https://i.imgur.com/2ZvLjhj.gif)](https://imgur.com/2ZvLjhj)
+[![Per-monitor auto-hide](https://i.imgur.com/w9mG4Jk.gif)](https://imgur.com/w9mG4Jk)
+
+**This tool - Maximized windows cover the taskbar area ON** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will fully extend into the taskbar area.
+
+[![Per-monitor auto-hide](https://i.imgur.com/fZW7F5n.gif)](https://imgur.com/fZW7F5n)
 
 **Windows built-in auto-hide** - Same interaction, but noticeably slower and less responsive garbage. Maximized windows will fully extend into the taskbar area.
 
-[![Windows default auto-hide comparison](https://i.imgur.com/5ReArXZ.gif)](https://imgur.com/5ReArXZ)
+[![Windows default auto-hide comparison](https://i.imgur.com/8wQrTvV.gif)](https://i.imgur.com/8wQrTvV)
 
 ## Requirements
 
@@ -33,7 +37,7 @@ I made this tool for myself after getting an OLED monitor and decided to make it
 
 ## Download
 
-Prebuilt binaries are published on the [Releases](https://github.com/nikoleinonen/per-monitor-taskbar/releases/latest) page. Download `per-monitor-taskbar.exe` and run it; there is no installer.
+Prebuilt binaries are published on the [Releases](https://github.com/nikoleinonen/per-monitor-taskbar/releases/latest) page. Download `PMT-1.2.exe` and run it; there is no installer.
 
 **SmartScreen:** Unsigned executables often trigger a first-run warning. Click **More info**, then **Run anyway**, or build from source and compare hashes if you prefer. Third-party scanners such as [VirusTotal](https://www.virustotal.com/gui/home/upload) can be used for an additional check.
 
@@ -73,17 +77,17 @@ Prebuilt binaries are published on the [Releases](https://github.com/nikoleinone
 3. **Output:** 
    
     ```text
-   build/Release/per-monitor-taskbar.exe
+   build/Release/PMT-1.2.exe
     ```
 
 ## Usage
 
-1. Start `per-monitor-taskbar.exe`. An icon appears in the notification area.
+1. Start `PMT-1.2.exe`. An icon appears in the notification area.
 2. **Left-click** the icon to open Settings, or **right-click** for the context menu.
 3. Enable **Auto-hide** per monitor as needed.
 4. Optionally turn on **Maximized windows cover the taskbar area** to fill that display fully. If its off, maximized windows do not cover the taskbar area.
 5. Optionally enable **Start with Windows** so the program automatically starts when you start your pc.
-6. Choose **OK**. Changes apply immediately.
+6. Choose **Apply**. Changes apply immediately and the window stays open until you close it.
 
 The tray menu includes **Reset everything**, which restores taskbar windows, turns off the app’s management state, and removes saved preferences under `HKCU\Software\PerMonitorTaskbar`.
 
@@ -95,9 +99,9 @@ There is no separate uninstaller. To remove the program cleanly:
 
 1. **Right-click** the tray icon and open the context menu.
 2. Choose **Reset everything** so taskbars are restored and preferences under `HKCU\Software\PerMonitorTaskbar` are cleared.
-3. If you enabled **Start with Windows**, open **Settings** from the tray (left-click), turn that option off, and click **OK** so the startup entry is removed.
+3. If you enabled **Start with Windows**, open **Settings** from the tray (left-click), turn that option off, and click **Apply** so the startup entry is removed.
 4. **Right-click** the tray icon again and choose **Exit**.
-5. Delete `per-monitor-taskbar.exe` from your computer.
+5. Delete `PMT-1.2.exe` from your computer.
 
 ## How it works
 
@@ -112,7 +116,7 @@ The app turns **off** the global Windows auto-hide state (`SHAppBarMessage` / ap
 
 A **50 ms** timer polls the cursor. If the pointer lies in a **48 px** hot zone above the bottom edge of a monitor whose taskbar is managed, the bar is shown (styles restored and redrawn). When the cursor leaves that zone and is not over the taskbar, the bar is hidden again.
 
-If **Maximized windows cover the taskbar area** is on for that monitor, the app sets that monitor's work area to the full display (`SPI_SETWORKAREA`, session only, without a system-wide broadcast — Explorer would treat a broadcast as a request to reserve the taskbar gap again). Hovering the bottom edge raises the taskbar above the maximized window.
+If **Maximized windows cover the taskbar area** is on for that monitor, the app sets that monitor's work area to the full display (`SPI_SETWORKAREA`, session only, without a system-wide broadcast - Explorer would treat a broadcast as a request to reserve the taskbar gap again). Hovering the bottom edge raises the taskbar above the maximized window.
 
 Preferences are stored in the registry:
 
