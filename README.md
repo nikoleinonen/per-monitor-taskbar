@@ -12,15 +12,19 @@ I made this tool for myself after getting an OLED monitor and decided to make it
 
 **Settings** - Per-display auto-hide and optional start with windows toggle.
 
-[![Settings](https://i.imgur.com/r0PxjV9.png)](https://imgur.com/r0PxjV9)
+[![Settings](https://i.imgur.com/z2vATCs.png)](https://imgur.com/z2vATCs)
 
-**This tool** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will not fully extend into the taskbar area unless **Maximized windows cover the taskbar area** is enabled for that display. (Fullscreen applications work normally.)
+**This tool - Maximized windows cover the taskbar area OFF** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will not fully extend into the taskbar area.
 
-[![Per-monitor auto-hide](https://i.imgur.com/2ZvLjhj.gif)](https://imgur.com/2ZvLjhj)
+[![Per-monitor auto-hide](https://i.imgur.com/w9mG4Jk.gif)](https://imgur.com/w9mG4Jk)
+
+**This tool - Maximized windows cover the taskbar area ON** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will fully extend into the taskbar area.
+
+[![Per-monitor auto-hide](https://i.imgur.com/fZW7F5n.gif)](https://imgur.com/fZW7F5n)
 
 **Windows built-in auto-hide** - Same interaction, but noticeably slower and less responsive garbage. Maximized windows will fully extend into the taskbar area.
 
-[![Windows default auto-hide comparison](https://i.imgur.com/5ReArXZ.gif)](https://imgur.com/5ReArXZ)
+[![Windows default auto-hide comparison](https://i.imgur.com/8wQrTvV.gif)](https://i.imgur.com/8wQrTvV)
 
 ## Requirements
 
