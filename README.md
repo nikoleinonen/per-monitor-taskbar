@@ -14,7 +14,7 @@ I made this tool for myself after getting an OLED monitor and decided to make it
 
 [![Settings](https://i.imgur.com/r0PxjV9.png)](https://imgur.com/r0PxjV9)
 
-**This tool** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will not fully extend into the taskbar area. (Fullscreen applications work normally.)
+**This tool** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will not fully extend into the taskbar area unless **Maximized windows use the full screen** is enabled for that display. (Fullscreen applications work normally.)
 
 [![Per-monitor auto-hide](https://i.imgur.com/2ZvLjhj.gif)](https://imgur.com/2ZvLjhj)
 
@@ -80,7 +80,7 @@ Prebuilt binaries are published on the [Releases](https://github.com/nikoleinone
 
 1. Start `per-monitor-taskbar.exe`. An icon appears in the notification area.
 2. **Left-click** the icon to open Settings, or **right-click** for the context menu.
-3. Enable **Auto-hide** per monitor as needed. Optionally enable **Start with Windows** so the program automatically starts when you start your pc.
+3. Enable **Auto-hide** per monitor as needed. On a display that auto-hides, **Maximized windows use the full screen** lets maximized windows cover the taskbar area. Hovering the bottom edge still shows the bar on top of the window. Optionally enable **Start with Windows** so the program automatically starts when you start your pc.
 4. Choose **OK**. Changes apply immediately.
 
 The tray menu includes **Reset everything**, which restores taskbar windows, turns off the app’s management state, and removes saved preferences under `HKCU\Software\PerMonitorTaskbar`.
@@ -110,13 +110,18 @@ The app turns **off** the global Windows auto-hide state (`SHAppBarMessage` / ap
 
 A **50 ms** timer polls the cursor. If the pointer lies in a **48 px** hot zone above the bottom edge of a monitor whose taskbar is managed, the bar is shown (styles restored and redrawn). When the cursor leaves that zone and is not over the taskbar, the bar is hidden again.
 
+If **Maximized windows use the full screen** is on for that monitor, the app sets that monitor's work area to the full display (`SPI_SETWORKAREA`, session only, without a system-wide broadcast — Explorer would treat a broadcast as a request to reserve the taskbar gap again). Hovering the bottom edge raises the taskbar above the maximized window.
+
 Preferences are stored in the registry:
 
 - `HKCU\Software\PerMonitorTaskbar\Monitors` - DWORD per display device name (`1` = auto-hide on, `0` = off).
+- `HKCU\Software\PerMonitorTaskbar\FullWorkArea` - DWORD per display device name (`1` = maximized windows cover the taskbar while that display auto-hides).
 
 ### Crash recovery
 
 Before altering any taskbar, the app records a dirty flag under `HKCU\Software\PerMonitorTaskbar` (`PrimaryManaged`). The original extended style of the primary bar is saved as `PrimaryOrigExStyle`. On the next startup, leftover click-through styles are cleared and any secondary bar that 1.0 slid off-screen is snapped back. If the dirty flag is still set, the primary bar is also restored from the saved style.
+
+When a monitor's work area is expanded, the rectangle to restore is stored under `WorkArea`. The next startup puts that reservation back before applying preferences again.
 
 Additional safeguards:
 
@@ -126,9 +131,9 @@ Additional safeguards:
 
 ## Limitations
 
-- **Work area:** On monitors where auto-hide is active through this tool, maximized windows will not reclaim the full height; a thin, taskbar-height strip will remain at the bottom. I find this more of a feature than a bug, but opinions may vary. This does not apply to fullscreen applications, which will work as usual.
+- **Work area:** By default, maximized windows keep a taskbar-height strip at the bottom of a monitor this tool auto-hides. **Maximized windows use the full screen** on that display gives them the whole monitor, and hovering the bottom edge shows the taskbar on top of the window. Fullscreen applications already cover the bar either way.
 - **Multi-taskbar setup:** Per-monitor behavior requires a taskbar on each display (Windows **Show taskbar on all displays**).
-- **Force-kill and removed binary:** If the process is terminated forcibly and the executable is deleted before a normal restart of the app, a managed taskbar can remain invisible until Explorer is restarted or the system is rebooted.
+- **Force-kill and removed binary:** If the process is terminated forcibly and the executable is deleted before a normal restart of the app, a managed taskbar can remain invisible until Explorer is restarted or the system is rebooted. An expanded work area stays full for the rest of the session in that same case; starting the app again, or signing out, puts it back.
 
 ## Troubleshooting
 

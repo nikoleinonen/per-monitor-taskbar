@@ -29,6 +29,7 @@ int Scale(int value, UINT dpi) { return MulDiv(value, dpi, 96); }
 
 struct MonitorRow {
   HWND checkbox = nullptr;
+  HWND fullWorkCheckbox = nullptr;
   taskbar::DisplayState display;
 };
 
@@ -74,7 +75,9 @@ void OnCreate(HWND wnd) {
 
     anyTaskbar = true;
     std::wstring label = L"Auto-hide \u2014 " + disp.displayLabel;
-    int ctrlId = IDC_MONITOR_BASE + static_cast<int>(st->monitors.size());
+    int index = static_cast<int>(st->monitors.size());
+    int ctrlId = IDC_MONITOR_BASE + index;
+    int fullId = IDC_FULLWORK_BASE + index;
 
     HWND cb = CreateWindowExW(
         0, L"BUTTON", label.c_str(),
@@ -83,10 +86,23 @@ void OnCreate(HWND wnd) {
     SendMessageW(cb, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
     SendMessageW(cb, BM_SETCHECK,
                  disp.autoHide ? BST_CHECKED : BST_UNCHECKED, 0);
-    y += s(30);
+    y += s(26);
+
+    HWND full = CreateWindowExW(
+        0, L"BUTTON", L"Maximized windows use the full screen",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, pad + s(18), y,
+        contentW - s(18), s(22), wnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(fullId)), hInst, nullptr);
+    SendMessageW(full, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
+    SendMessageW(full, BM_SETCHECK,
+                 disp.fullWorkArea ? BST_CHECKED : BST_UNCHECKED, 0);
+    if (!disp.autoHide)
+      EnableWindow(full, FALSE);
+    y += s(28);
 
     MonitorRow row;
     row.checkbox = cb;
+    row.fullWorkCheckbox = full;
     row.display = std::move(disp);
     st->monitors.push_back(std::move(row));
   }
@@ -156,7 +172,10 @@ void OnOk(HWND wnd) {
   for (const auto& row : st->monitors) {
     bool checked =
         SendMessageW(row.checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    bool fullWork = checked && SendMessageW(row.fullWorkCheckbox, BM_GETCHECK,
+                                            0, 0) == BST_CHECKED;
     taskbar::SavePreference(row.display.deviceName, checked);
+    taskbar::SaveFullWorkAreaPreference(row.display.deviceName, fullWork);
   }
 
   taskbar::ApplyPreferences();
@@ -169,7 +188,22 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     OnCreate(wnd);
     return 0;
 
-  case WM_COMMAND:
+  case WM_COMMAND: {
+    auto* st =
+        reinterpret_cast<State*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+    if (st && HIWORD(wParam) == BN_CLICKED) {
+      const int index = LOWORD(wParam) - IDC_MONITOR_BASE;
+      if (index >= 0 && index < static_cast<int>(st->monitors.size())) {
+        const bool hide =
+            SendMessageW(st->monitors[index].checkbox, BM_GETCHECK, 0, 0) ==
+            BST_CHECKED;
+        HWND full = st->monitors[index].fullWorkCheckbox;
+        EnableWindow(full, hide ? TRUE : FALSE);
+        if (!hide)
+          SendMessageW(full, BM_SETCHECK, BST_UNCHECKED, 0);
+        return 0;
+      }
+    }
     if (LOWORD(wParam) == IDOK) {
       OnOk(wnd);
       return 0;
@@ -179,6 +213,7 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       return 0;
     }
     return 0;
+  }
 
   case WM_DESTROY: {
     auto* st =

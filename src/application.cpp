@@ -184,7 +184,14 @@ LRESULT CALLBACK Application::HostWndProc(HWND hwnd, UINT msg, WPARAM wParam,
     return 0;
 
   case WM_DISPLAYCHANGE:
+    SetTimer(hwnd, kDisplayChangeTimerId, 500, nullptr);
+    return 0;
+
   case WM_SETTINGCHANGE:
+    // Applying preferences on a work-area change would show every taskbar.
+    // Enforce() expands the work area again if Explorer reserved the gap.
+    if (wParam == SPI_SETWORKAREA)
+      return 0;
     SetTimer(hwnd, kDisplayChangeTimerId, 500, nullptr);
     return 0;
 

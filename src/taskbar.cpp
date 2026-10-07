@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <cstring>
 #include <optional>
 #include <string>
 #include <vector>
@@ -17,9 +18,11 @@ namespace {
 constexpr const wchar_t* kAppKey = L"Software\\PerMonitorTaskbar";
 constexpr const wchar_t* kPrefsKey =
     L"Software\\PerMonitorTaskbar\\Monitors";
+constexpr const wchar_t* kFullWorkAreaKey =
+    L"Software\\PerMonitorTaskbar\\FullWorkArea";
+constexpr const wchar_t* kWorkAreaKey =
+    L"Software\\PerMonitorTaskbar\\WorkArea";
 constexpr int kHotZonePixels = 48;
-
-// -- taskbar window discovery ------------------------------------------------
 
 struct TaskbarWindow {
   HWND hwnd;
@@ -57,8 +60,6 @@ std::vector<TaskbarWindow> FindTaskbars() {
   return result;
 }
 
-// -- preference helpers ------------------------------------------------------
-
 std::optional<bool> LoadPreference(const std::wstring& deviceName) {
   RegKey key;
   if (!key.Open(HKEY_CURRENT_USER, kPrefsKey))
@@ -69,7 +70,15 @@ std::optional<bool> LoadPreference(const std::wstring& deviceName) {
   return std::nullopt;
 }
 
-// -- display label -----------------------------------------------------------
+std::optional<bool> LoadFullWorkArea(const std::wstring& deviceName) {
+  RegKey key;
+  if (!key.Open(HKEY_CURRENT_USER, kFullWorkAreaKey))
+    return std::nullopt;
+  auto val = key.ReadDword(deviceName.c_str());
+  if (val.has_value())
+    return *val != 0;
+  return std::nullopt;
+}
 
 std::wstring BuildDisplayLabel(const monitor::Info& mon) {
   int w = mon.bounds.right - mon.bounds.left;
@@ -84,13 +93,18 @@ std::wstring BuildDisplayLabel(const monitor::Info& mon) {
   return label;
 }
 
-// -- managed taskbar state ---------------------------------------------------
-
 struct ManagedTaskbar {
   HWND hwnd;
+  HMONITOR monitor;
+  std::wstring deviceName;
   RECT monitorBounds;
+  RECT reservedWorkArea;
   bool hidden;
+  bool fullWorkArea;
   LONG_PTR originalExStyle;
+  // GetTickCount64 deadline. A failed work-area change must not be retried
+  // on every timer tick.
+  ULONGLONG workAreaRetryAfter = 0;
 };
 
 std::vector<ManagedTaskbar> g_managed;
@@ -182,9 +196,268 @@ bool IsEffectivelyHidden(HWND hwnd) {
   return (flags & LWA_ALPHA) != 0 && alpha == 0;
 }
 
-// Hide in place: transparency + click-through. Sliding a secondary bar
-// below the monitor edge paints it on any display stacked underneath.
+bool SameRect(const RECT& a, const RECT& b) {
+  return a.left == b.left && a.top == b.top && a.right == b.right &&
+         a.bottom == b.bottom;
+}
 
+bool RectInside(const RECT& inner, const RECT& outer) {
+  return inner.left >= outer.left && inner.top >= outer.top &&
+         inner.right <= outer.right && inner.bottom <= outer.bottom &&
+         inner.right > inner.left && inner.bottom > inner.top;
+}
+
+bool IsShellOrDesktop(HWND hwnd) {
+  wchar_t cls[64];
+  if (GetClassNameW(hwnd, cls, 64) == 0)
+    return true;
+  return _wcsicmp(cls, L"Shell_TrayWnd") == 0 ||
+         _wcsicmp(cls, L"Shell_SecondaryTrayWnd") == 0 ||
+         _wcsicmp(cls, L"Progman") == 0 ||
+         _wcsicmp(cls, L"WorkerW") == 0 ||
+         _wcsicmp(cls, L"PerMonitorTaskbarHost") == 0 ||
+         _wcsicmp(cls, L"PerMonitorTaskbarSettings") == 0;
+}
+
+struct ZoomedNotify {
+  HMONITOR monitor;
+};
+
+BOOL CALLBACK NotifyZoomedProc(HWND hwnd, LPARAM lp) {
+  if (!IsWindowVisible(hwnd) || IsIconic(hwnd) || !IsZoomed(hwnd))
+    return TRUE;
+  if (IsShellOrDesktop(hwnd))
+    return TRUE;
+  const auto* ctx = reinterpret_cast<const ZoomedNotify*>(lp);
+  if (MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) != ctx->monitor)
+    return TRUE;
+  // Posted so a hung window cannot stall the timer.
+  SendNotifyMessageW(hwnd, WM_SETTINGCHANGE, SPI_SETWORKAREA, 0);
+  return TRUE;
+}
+
+bool CurrentWorkArea(HMONITOR monitor, RECT* out) {
+  MONITORINFO mi{sizeof(mi)};
+  if (!GetMonitorInfoW(monitor, &mi))
+    return false;
+  *out = mi.rcWork;
+  return true;
+}
+
+// Update one monitor's work area without SPIF_SENDCHANGE. Explorer treats
+// that broadcast as a cue to put the taskbar reservation back, which made
+// the 50 ms timer fight it forever. Already-maximized windows are told
+// individually. No SPIF_UPDATEINIFILE, so this does not stick in the profile.
+bool CommitWorkArea(HMONITOR monitor, const RECT& rc) {
+  if (rc.right <= rc.left || rc.bottom <= rc.top)
+    return false;
+  RECT current{};
+  if (CurrentWorkArea(monitor, &current) && SameRect(current, rc))
+    return true;
+
+  RECT copy = rc;
+  if (!SystemParametersInfoW(SPI_SETWORKAREA, 0, &copy, 0))
+    return false;
+  RECT after{};
+  if (!CurrentWorkArea(monitor, &after) || !SameRect(after, rc))
+    return false;
+  ZoomedNotify ctx{monitor};
+  EnumWindows(NotifyZoomedProc, reinterpret_cast<LPARAM>(&ctx));
+  return true;
+}
+
+// Work area Explorer would reserve for a taskbar sitting on one edge.
+RECT ReservedFromTaskbar(const RECT& monitor, const RECT& taskbar) {
+  RECT inter{};
+  if (!IntersectRect(&inter, &monitor, &taskbar))
+    return monitor;
+
+  const int width = inter.right - inter.left;
+  const int height = inter.bottom - inter.top;
+  if (width <= 0 || height <= 0)
+    return monitor;
+
+  RECT work = monitor;
+  if (height <= width) {
+    const int fromTop = inter.top - monitor.top;
+    const int fromBottom = monitor.bottom - inter.bottom;
+    if (fromTop <= fromBottom)
+      work.top = inter.bottom;
+    else
+      work.bottom = inter.top;
+  } else {
+    const int fromLeft = inter.left - monitor.left;
+    const int fromRight = monitor.right - inter.right;
+    if (fromLeft <= fromRight)
+      work.left = inter.right;
+    else
+      work.right = inter.left;
+  }
+  return work;
+}
+
+void SaveWorkAreaDirty(const std::wstring& deviceName, const RECT& rc) {
+  RegKey key;
+  if (key.Create(HKEY_CURRENT_USER, kWorkAreaKey))
+    key.WriteBinary(deviceName.c_str(), reinterpret_cast<const BYTE*>(&rc),
+                    sizeof(rc));
+}
+
+void ClearWorkAreaDirty(const std::wstring& deviceName) {
+  RegKey key;
+  if (key.Open(HKEY_CURRENT_USER, kWorkAreaKey, KEY_SET_VALUE))
+    key.DeleteValue(deviceName.c_str());
+}
+
+struct DirtyWorkArea {
+  std::wstring deviceName;
+  RECT reserved;
+};
+
+std::vector<DirtyWorkArea> ReadDirtyWorkAreas() {
+  std::vector<DirtyWorkArea> items;
+  RegKey key;
+  if (!key.Open(HKEY_CURRENT_USER, kWorkAreaKey))
+    return items;
+
+  DWORD index = 0;
+  for (;;) {
+    wchar_t name[256];
+    DWORD nameLen = 256;
+    BYTE data[sizeof(RECT)];
+    DWORD dataSize = sizeof(data);
+    DWORD type = 0;
+    LONG status = RegEnumValueW(key.Get(), index, name, &nameLen, nullptr,
+                                &type, data, &dataSize);
+    if (status != ERROR_SUCCESS)
+      break;
+    ++index;
+    if (type != REG_BINARY || dataSize != sizeof(RECT))
+      continue;
+    DirtyWorkArea item;
+    item.deviceName = name;
+    std::memcpy(&item.reserved, data, sizeof(RECT));
+    items.push_back(std::move(item));
+  }
+  return items;
+}
+
+// Put back the reserved work area for monitors this app expanded. A saved
+// rectangle is applied only when it still lies inside that same monitor, so
+// a stale virtual-screen rect cannot land on a different display.
+void RestoreDirtyWorkAreas() {
+  auto dirty = ReadDirtyWorkAreas();
+  if (dirty.empty())
+    return;
+
+  auto monitors = monitor::Enumerate();
+  auto taskbars = FindTaskbars();
+  bool allRestored = true;
+
+  for (const auto& item : dirty) {
+    const monitor::Info* mon = nullptr;
+    for (const auto& candidate : monitors) {
+      if (candidate.deviceName == item.deviceName) {
+        mon = &candidate;
+        break;
+      }
+    }
+    if (!mon)
+      continue;
+
+    MONITORINFO mi{sizeof(mi)};
+    if (!GetMonitorInfoW(mon->handle, &mi)) {
+      allRestored = false;
+      continue;
+    }
+
+    RECT reserved = item.reserved;
+    if (!RectInside(reserved, mi.rcMonitor) ||
+        SameRect(reserved, mi.rcMonitor)) {
+      reserved = mi.rcMonitor;
+      for (const auto& tw : taskbars) {
+        if (tw.monitor != mon->handle)
+          continue;
+        RECT taskbarRect{};
+        if (GetWindowRect(tw.hwnd, &taskbarRect))
+          reserved = ReservedFromTaskbar(mi.rcMonitor, taskbarRect);
+        break;
+      }
+    }
+
+    if (!SameRect(mi.rcWork, reserved) &&
+        !CommitWorkArea(mon->handle, reserved))
+      allRestored = false;
+  }
+
+  if (allRestored)
+    RegDeleteTreeW(HKEY_CURRENT_USER, kWorkAreaKey);
+}
+
+void ArmFullWorkArea(ManagedTaskbar& mt) {
+  MONITORINFO mi{sizeof(mi)};
+  if (!GetMonitorInfoW(mt.monitor, &mi)) {
+    mt.fullWorkArea = false;
+    return;
+  }
+
+  RECT reserved = mi.rcWork;
+  if (SameRect(reserved, mi.rcMonitor)) {
+    RECT taskbarRect{};
+    if (GetWindowRect(mt.hwnd, &taskbarRect))
+      reserved = ReservedFromTaskbar(mi.rcMonitor, taskbarRect);
+  }
+
+  mt.reservedWorkArea = reserved;
+  mt.fullWorkArea = true;
+  mt.workAreaRetryAfter = 0;
+  SaveWorkAreaDirty(mt.deviceName, reserved);
+  CommitWorkArea(mt.monitor, mi.rcMonitor);
+}
+
+void RestoreWorkArea(ManagedTaskbar& mt) {
+  if (!mt.fullWorkArea)
+    return;
+
+  // Keep the saved rectangle if the restore does not stick, so the next
+  // startup can try again.
+  if (!CommitWorkArea(mt.monitor, mt.reservedWorkArea))
+    return;
+
+  ClearWorkAreaDirty(mt.deviceName);
+  mt.fullWorkArea = false;
+}
+
+// Explorer sometimes writes the reserved work area back. Re-expand here.
+// ApplyPreferences would show every taskbar first.
+void MaintainWorkArea(ManagedTaskbar& mt) {
+  if (!mt.fullWorkArea || !IsWindow(mt.hwnd))
+    return;
+
+  MONITORINFO mi{sizeof(mi)};
+  if (!GetMonitorInfoW(mt.monitor, &mi))
+    return;
+  if (SameRect(mi.rcWork, mi.rcMonitor)) {
+    mt.workAreaRetryAfter = 0;
+    return;
+  }
+
+  const ULONGLONG now = GetTickCount64();
+  if (now < mt.workAreaRetryAfter)
+    return;
+
+  if (RectInside(mi.rcWork, mi.rcMonitor) &&
+      !SameRect(mi.rcWork, mt.reservedWorkArea)) {
+    mt.reservedWorkArea = mi.rcWork;
+    SaveWorkAreaDirty(mt.deviceName, mi.rcWork);
+  }
+
+  if (!CommitWorkArea(mt.monitor, mi.rcMonitor))
+    mt.workAreaRetryAfter = now + 1000;
+}
+
+// Transparency and click-through, in place. Moving a secondary bar past the
+// monitor edge paints it onto any display stacked underneath.
 void DoHide(ManagedTaskbar& mt) {
   LONG_PTR ex = GetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE);
   SetWindowLongPtrW(mt.hwnd, GWL_EXSTYLE,
@@ -195,6 +468,12 @@ void DoHide(ManagedTaskbar& mt) {
 
 void DoShow(ManagedTaskbar& mt) {
   RestoreWindowVisuals(mt.hwnd, mt.originalExStyle);
+  if (mt.fullWorkArea) {
+    // The bar stays in the strip the maximized window now occupies, so it
+    // has to come up above that window.
+    SetWindowPos(mt.hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  }
   mt.hidden = false;
 }
 
@@ -202,8 +481,6 @@ void DoRestore(ManagedTaskbar& mt) {
   RestoreWindowVisuals(mt.hwnd, mt.originalExStyle);
   mt.hidden = false;
 }
-
-// -- dirty-flag bookkeeping --------------------------------------------------
 
 void MarkManagedDirty(bool isPrimary, LONG_PTR originalExStyle) {
   RegKey key;
@@ -224,8 +501,6 @@ void ClearPrimaryDirty() {
 }
 
 } // namespace
-
-// -- public API --------------------------------------------------------------
 
 std::vector<DisplayState> QueryDisplays() {
   auto monitors = monitor::Enumerate();
@@ -250,6 +525,8 @@ std::vector<DisplayState> QueryDisplays() {
 
     auto pref = LoadPreference(mon.deviceName);
     ds.autoHide = pref.value_or(globalState);
+    ds.fullWorkArea =
+        ds.autoHide && LoadFullWorkArea(mon.deviceName).value_or(false);
 
     result.push_back(std::move(ds));
   }
@@ -262,6 +539,7 @@ void RecoverFromCrash() {
   // was not written. Otherwise ApplyPreferences can capture a broken style
   // as "original" and restore would keep the bar invisible.
   UndoLeftoverTaskbarState();
+  RestoreDirtyWorkAreas();
 
   RegKey key;
   if (!key.Open(HKEY_CURRENT_USER, kAppKey))
@@ -283,6 +561,13 @@ void SavePreference(const std::wstring& deviceName, bool autoHide) {
   RegKey key;
   if (key.Create(HKEY_CURRENT_USER, kPrefsKey))
     key.WriteDword(deviceName.c_str(), autoHide ? 1u : 0u);
+}
+
+void SaveFullWorkAreaPreference(const std::wstring& deviceName,
+                                bool fullWorkArea) {
+  RegKey key;
+  if (key.Create(HKEY_CURRENT_USER, kFullWorkAreaKey))
+    key.WriteDword(deviceName.c_str(), fullWorkArea ? 1u : 0u);
 }
 
 bool GetGlobalAutoHide() {
@@ -345,9 +630,21 @@ void ApplyPreferences() {
         MONITORINFO mi = {sizeof(mi)};
         if (GetMonitorInfoW(mon.handle, &mi)) {
           LONG_PTR origEx = GetWindowLongPtrW(tw.hwnd, GWL_EXSTYLE);
-          g_managed.push_back({tw.hwnd, mi.rcMonitor, false, origEx});
+          ManagedTaskbar mt;
+          mt.hwnd = tw.hwnd;
+          mt.monitor = mon.handle;
+          mt.deviceName = mon.deviceName;
+          mt.monitorBounds = mi.rcMonitor;
+          mt.reservedWorkArea = {};
+          mt.hidden = false;
+          mt.fullWorkArea = false;
+          mt.originalExStyle = origEx;
+          mt.workAreaRetryAfter = 0;
+          g_managed.push_back(std::move(mt));
           g_active = true;
           MarkManagedDirty(mon.isPrimary, origEx);
+          if (LoadFullWorkArea(mon.deviceName).value_or(false))
+            ArmFullWorkArea(g_managed.back());
         }
         break;
       }
@@ -366,10 +663,14 @@ void Enforce() {
 
   for (auto& mt : g_managed) {
     if (!IsWindow(mt.hwnd)) {
+      for (auto& bar : g_managed)
+        RestoreWorkArea(bar);
       g_managed.clear();
       g_active = false;
       return;
     }
+
+    MaintainWorkArea(mt);
 
     bool inHotZone = IsCursorInHotZone(cursor, mt);
 
@@ -393,6 +694,7 @@ void RestoreAll() {
   for (auto& mt : g_managed) {
     if (IsWindow(mt.hwnd))
       DoRestore(mt);
+    RestoreWorkArea(mt);
   }
   g_managed.clear();
   g_active = false;
@@ -403,11 +705,9 @@ void FactoryReset() {
   RestoreAll();
   SetGlobalAutoHide(false);
 
-  // Undo leftover click-through / 1.0 slide if RestoreAll missed a bar.
-  // Do not strip WS_EX_LAYERED from healthy Explorer taskbars.
+  // RestoreAll only sees bars this session was managing.
   UndoLeftoverTaskbarState();
 
-  // Delete all saved preferences.
   RegDeleteTreeW(HKEY_CURRENT_USER, kAppKey);
 }
 
