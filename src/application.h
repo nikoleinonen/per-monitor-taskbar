@@ -7,8 +7,8 @@ public:
   Application();
   ~Application();
 
-  Application(const Application&) = delete;
-  Application& operator=(const Application&) = delete;
+  Application(const Application &) = delete;
+  Application &operator=(const Application &) = delete;
 
   bool Init(HINSTANCE hInstance);
   int Run();
@@ -20,7 +20,7 @@ public:
   bool GetStartWithWindows() const;
   void SetStartWithWindows(bool enable);
 
-  static Application* Get() { return instance_; }
+  static Application *Get() { return instance_; }
 
 private:
   static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wParam,
@@ -30,7 +30,7 @@ private:
   void RemoveTrayIcon();
   void ShowTrayMenu();
 
-  static Application* instance_;
+  static Application *instance_;
 
   HINSTANCE hInstance_ = nullptr;
   HWND hostWindow_ = nullptr;

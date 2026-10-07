@@ -20,8 +20,8 @@ struct DisplayState {
 // Windows auto-hide state.
 std::vector<DisplayState> QueryDisplays();
 
-void SavePreference(const std::wstring& deviceName, bool autoHide);
-void SaveFullWorkAreaPreference(const std::wstring& deviceName,
+void SavePreference(const std::wstring &deviceName, bool autoHide);
+void SaveFullWorkAreaPreference(const std::wstring &deviceName,
                                 bool fullWorkArea);
 
 // The single Windows auto-hide toggle. This app turns it off and hides

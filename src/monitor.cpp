@@ -6,7 +6,7 @@ namespace monitor {
 
 namespace {
 
-std::wstring ResolveFriendlyName(const wchar_t* gdiDeviceName) {
+std::wstring ResolveFriendlyName(const wchar_t *gdiDeviceName) {
   DISPLAY_DEVICEW adapter{};
   adapter.cb = sizeof(adapter);
 
@@ -36,9 +36,8 @@ std::wstring ResolveFriendlyName(const wchar_t* gdiDeviceName) {
   return gdiDeviceName ? gdiDeviceName : L"Unknown";
 }
 
-BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC, LPRECT,
-                              LPARAM lParam) {
-  auto* results = reinterpret_cast<std::vector<Info>*>(lParam);
+BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
+  auto *results = reinterpret_cast<std::vector<Info> *>(lParam);
 
   MONITORINFOEXW mi{};
   mi.cbSize = sizeof(mi);
@@ -63,12 +62,11 @@ std::vector<Info> Enumerate() {
   EnumDisplayMonitors(nullptr, nullptr, MonitorEnumProc,
                       reinterpret_cast<LPARAM>(&results));
 
-  std::sort(results.begin(), results.end(),
-            [](const Info& a, const Info& b) {
-              if (a.isPrimary != b.isPrimary)
-                return a.isPrimary;
-              return a.deviceName < b.deviceName;
-            });
+  std::sort(results.begin(), results.end(), [](const Info &a, const Info &b) {
+    if (a.isPrimary != b.isPrimary)
+      return a.isPrimary;
+    return a.deviceName < b.deviceName;
+  });
 
   return results;
 }

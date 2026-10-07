@@ -11,10 +11,10 @@ namespace settings_window {
 
 namespace {
 
-constexpr const wchar_t* kClassName = L"PerMonitorTaskbarSettings";
+constexpr const wchar_t *kClassName = L"PerMonitorTaskbarSettings";
 
 UINT GetWindowDpi(HWND hwnd) {
-  using Fn = UINT(WINAPI*)(HWND);
+  using Fn = UINT(WINAPI *)(HWND);
   static auto fn = reinterpret_cast<Fn>(
       GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
   if (fn)
@@ -41,7 +41,7 @@ struct State {
 };
 
 void OnCreate(HWND wnd) {
-  auto* st = new State();
+  auto *st = new State();
   SetWindowLongPtrW(wnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(st));
 
   UINT dpi = GetWindowDpi(wnd);
@@ -69,7 +69,7 @@ void OnCreate(HWND wnd) {
   st->monitors.reserve(displays.size());
   bool anyTaskbar = false;
 
-  for (auto& disp : displays) {
+  for (auto &disp : displays) {
     if (!disp.hasTaskbar)
       continue;
 
@@ -80,12 +80,12 @@ void OnCreate(HWND wnd) {
     int fullId = IDC_FULLWORK_BASE + index;
 
     HWND cb = CreateWindowExW(
-        0, L"BUTTON", label.c_str(),
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, pad, y, contentW, s(24), wnd,
+        0, L"BUTTON", label.c_str(), WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        pad, y, contentW, s(24), wnd,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(ctrlId)), hInst, nullptr);
     SendMessageW(cb, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
-    SendMessageW(cb, BM_SETCHECK,
-                 disp.autoHide ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(cb, BM_SETCHECK, disp.autoHide ? BST_CHECKED : BST_UNCHECKED,
+                 0);
     y += s(26);
 
     HWND full = CreateWindowExW(
@@ -120,7 +120,7 @@ void OnCreate(HWND wnd) {
 
   y += s(8);
 
-  Application* app = Application::Get();
+  Application *app = Application::Get();
   st->originalStartup = app ? app->GetStartWithWindows() : false;
 
   st->startupCheckbox = CreateWindowExW(
@@ -136,16 +136,15 @@ void OnCreate(HWND wnd) {
 
   HWND okBtn = CreateWindowExW(
       0, L"BUTTON", L"OK", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, pad, y,
-      s(90), s(28), wnd,
-      reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)), hInst, nullptr);
+      s(90), s(28), wnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)),
+      hInst, nullptr);
   SendMessageW(okBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
 
   HWND cancelBtn = CreateWindowExW(
       0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
       pad + s(100), y, s(90), s(28), wnd,
       reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)), hInst, nullptr);
-  SendMessageW(cancelBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->font),
-               TRUE);
+  SendMessageW(cancelBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
   y += s(40);
 
   RECT wr{}, cr{};
@@ -158,20 +157,19 @@ void OnCreate(HWND wnd) {
 }
 
 void OnOk(HWND wnd) {
-  auto* st = reinterpret_cast<State*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+  auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
   if (!st)
     return;
 
   bool startupChecked =
       SendMessageW(st->startupCheckbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
   if (startupChecked != st->originalStartup) {
-    if (Application* app = Application::Get())
+    if (Application *app = Application::Get())
       app->SetStartWithWindows(startupChecked);
   }
 
-  for (const auto& row : st->monitors) {
-    bool checked =
-        SendMessageW(row.checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
+  for (const auto &row : st->monitors) {
+    bool checked = SendMessageW(row.checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
     bool fullWork = checked && SendMessageW(row.fullWorkCheckbox, BM_GETCHECK,
                                             0, 0) == BST_CHECKED;
     taskbar::SavePreference(row.display.deviceName, checked);
@@ -189,14 +187,12 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return 0;
 
   case WM_COMMAND: {
-    auto* st =
-        reinterpret_cast<State*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+    auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
     if (st && HIWORD(wParam) == BN_CLICKED) {
       const int index = LOWORD(wParam) - IDC_MONITOR_BASE;
       if (index >= 0 && index < static_cast<int>(st->monitors.size())) {
-        const bool hide =
-            SendMessageW(st->monitors[index].checkbox, BM_GETCHECK, 0, 0) ==
-            BST_CHECKED;
+        const bool hide = SendMessageW(st->monitors[index].checkbox,
+                                       BM_GETCHECK, 0, 0) == BST_CHECKED;
         HWND full = st->monitors[index].fullWorkCheckbox;
         EnableWindow(full, hide ? TRUE : FALSE);
         if (!hide)
@@ -216,8 +212,7 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   }
 
   case WM_DESTROY: {
-    auto* st =
-        reinterpret_cast<State*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+    auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
     if (st) {
       if (st->font)
         DeleteObject(st->font);
@@ -249,8 +244,8 @@ HWND Create(HINSTANCE hInstance) {
 
   HWND wnd = CreateWindowExW(
       WS_EX_DLGMODALFRAME, kClassName, L"Per-Monitor Taskbar",
-      WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN, CW_USEDEFAULT,
-      CW_USEDEFAULT, 520, 200, nullptr, nullptr, hInstance, nullptr);
+      WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
+      520, 200, nullptr, nullptr, hInstance, nullptr);
   if (!wnd)
     return nullptr;
 

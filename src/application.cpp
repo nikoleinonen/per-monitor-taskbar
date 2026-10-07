@@ -15,14 +15,14 @@ constexpr UINT kTrayIconId = 1;
 constexpr UINT_PTR kEnforceTimerId = 1;
 constexpr UINT_PTR kDisplayChangeTimerId = 2;
 
-constexpr const wchar_t* kHostClassName = L"PerMonitorTaskbarHost";
-constexpr const wchar_t* kRunKey =
+constexpr const wchar_t *kHostClassName = L"PerMonitorTaskbarHost";
+constexpr const wchar_t *kRunKey =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr const wchar_t* kRunValueName = L"PerMonitorTaskbar";
+constexpr const wchar_t *kRunValueName = L"PerMonitorTaskbar";
 
 } // namespace
 
-Application* Application::instance_ = nullptr;
+Application *Application::instance_ = nullptr;
 
 Application::Application() { instance_ = this; }
 
@@ -116,8 +116,8 @@ void Application::ShowTrayMenu() {
   AppendMenuW(menu, MF_STRING, 2, L"Exit");
 
   SetForegroundWindow(hostWindow_);
-  TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_LEFTALIGN,
-                 pt.x, pt.y, 0, hostWindow_, nullptr);
+  TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x,
+                 pt.y, 0, hostWindow_, nullptr);
   DestroyMenu(menu);
 }
 
@@ -165,7 +165,7 @@ void Application::SetStartWithWindows(bool enable) {
 
 LRESULT CALLBACK Application::HostWndProc(HWND hwnd, UINT msg, WPARAM wParam,
                                           LPARAM lParam) {
-  Application* app = instance_;
+  Application *app = instance_;
 
   if (app && app->taskbarCreatedMsg_ && msg == app->taskbarCreatedMsg_) {
     app->AddTrayIcon();
