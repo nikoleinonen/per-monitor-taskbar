@@ -134,17 +134,11 @@ void OnCreate(HWND wnd) {
                st->originalStartup ? BST_CHECKED : BST_UNCHECKED, 0);
   y += s(36);
 
-  HWND okBtn = CreateWindowExW(
-      0, L"BUTTON", L"OK", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, pad, y,
-      s(90), s(28), wnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)),
-      hInst, nullptr);
-  SendMessageW(okBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
-
-  HWND cancelBtn = CreateWindowExW(
-      0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-      pad + s(100), y, s(90), s(28), wnd,
-      reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)), hInst, nullptr);
-  SendMessageW(cancelBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
+  HWND applyBtn = CreateWindowExW(
+      0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, pad, y,
+      s(90), s(28), wnd,
+      reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_APPLY)), hInst, nullptr);
+  SendMessageW(applyBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->font), TRUE);
   y += s(40);
 
   RECT wr{}, cr{};
@@ -156,7 +150,7 @@ void OnCreate(HWND wnd) {
                y + pad + borderH, SWP_NOMOVE | SWP_NOZORDER);
 }
 
-void OnOk(HWND wnd) {
+void OnApply(HWND wnd) {
   auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
   if (!st)
     return;
@@ -164,8 +158,10 @@ void OnOk(HWND wnd) {
   bool startupChecked =
       SendMessageW(st->startupCheckbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
   if (startupChecked != st->originalStartup) {
-    if (Application *app = Application::Get())
+    if (Application *app = Application::Get()) {
       app->SetStartWithWindows(startupChecked);
+      st->originalStartup = startupChecked;
+    }
   }
 
   for (const auto &row : st->monitors) {
@@ -177,7 +173,6 @@ void OnOk(HWND wnd) {
   }
 
   taskbar::ApplyPreferences();
-  DestroyWindow(wnd);
 }
 
 LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -200,12 +195,8 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
       }
     }
-    if (LOWORD(wParam) == IDOK) {
-      OnOk(wnd);
-      return 0;
-    }
-    if (LOWORD(wParam) == IDCANCEL) {
-      DestroyWindow(wnd);
+    if (LOWORD(wParam) == IDC_APPLY) {
+      OnApply(wnd);
       return 0;
     }
     return 0;

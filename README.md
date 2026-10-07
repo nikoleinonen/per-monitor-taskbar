@@ -83,7 +83,7 @@ Prebuilt binaries are published on the [Releases](https://github.com/nikoleinone
 3. Enable **Auto-hide** per monitor as needed.
 4. Optionally turn on **Maximized windows cover the taskbar area** to fill that display fully. If its off, maximized windows do not cover the taskbar area.
 5. Optionally enable **Start with Windows** so the program automatically starts when you start your pc.
-6. Choose **OK**. Changes apply immediately.
+6. Choose **Apply**. Changes apply immediately and the window stays open until you close it.
 
 The tray menu includes **Reset everything**, which restores taskbar windows, turns off the app’s management state, and removes saved preferences under `HKCU\Software\PerMonitorTaskbar`.
 
@@ -95,7 +95,7 @@ There is no separate uninstaller. To remove the program cleanly:
 
 1. **Right-click** the tray icon and open the context menu.
 2. Choose **Reset everything** so taskbars are restored and preferences under `HKCU\Software\PerMonitorTaskbar` are cleared.
-3. If you enabled **Start with Windows**, open **Settings** from the tray (left-click), turn that option off, and click **OK** so the startup entry is removed.
+3. If you enabled **Start with Windows**, open **Settings** from the tray (left-click), turn that option off, and click **Apply** so the startup entry is removed.
 4. **Right-click** the tray icon again and choose **Exit**.
 5. Delete `per-monitor-taskbar.exe` from your computer.
 
