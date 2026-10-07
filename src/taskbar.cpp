@@ -359,8 +359,11 @@ void RestoreDirtyWorkAreas() {
         break;
       }
     }
-    if (!mon)
+    // This display may return later in the session with the expanded area.
+    if (!mon) {
+      allRestored = false;
       continue;
+    }
 
     MONITORINFO mi{sizeof(mi)};
     if (!GetMonitorInfoW(mon->handle, &mi)) {
