@@ -31,6 +31,8 @@ target_link_libraries(per-monitor-taskbar PRIVATE
   Gdi32
   Advapi32
   Comctl32
+  Dwmapi
+  Uxtheme
 )
 
 if(MSVC)

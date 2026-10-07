@@ -1,10 +1,19 @@
 #include "settings_window.h"
 
 #include "application.h"
+#include "registry_key.h"
 #include "resource.h"
 #include "taskbar.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
+#include <uxtheme.h>
+
+// rpcndr.h, included via the theme headers, #defines small as char.
+#ifdef small
+#undef small
+#endif
+
 #include <string>
 #include <vector>
 
@@ -72,11 +81,255 @@ struct State {
   HFONT font = nullptr;
   HICON iconBig = nullptr;
   HICON iconSmall = nullptr;
+  bool dark = false;
+  bool ownsBackground = false;
+  HBRUSH background = nullptr;
+  COLORREF text = 0;
+  COLORREF disabledText = 0;
+  bool applyHot = false;
 };
 
 void SetControlFont(HWND ctrl, HFONT font) {
   if (ctrl)
     SendMessageW(ctrl, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+}
+
+// Same fill as the Windows 11 dark window surface, so the client meets the caption.
+constexpr COLORREF kDarkBackground = RGB(32, 32, 32);
+constexpr COLORREF kDarkText = RGB(255, 255, 255);
+constexpr COLORREF kDarkDisabledText = RGB(160, 160, 160);
+
+// 0 = dark apps, 1 = light apps. A missing value keeps the light frame.
+bool AppsUseLightTheme() {
+  RegKey key;
+  if (key.Open(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize")) {
+    if (auto theme = key.ReadDword(L"AppsUseLightTheme"))
+      return *theme != 0;
+  }
+  return true;
+}
+
+bool ShouldUseDarkTheme() {
+  HIGHCONTRASTW hc{};
+  hc.cbSize = sizeof(hc);
+  if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0) &&
+      (hc.dwFlags & HCF_HIGHCONTRASTON) != 0)
+    return false;
+  return !AppsUseLightTheme();
+}
+
+// Stock checkbox and button themes only go dark after these ordinals are set.
+void EnableDarkModeSupport() {
+  static bool once = false;
+  if (once)
+    return;
+  once = true;
+
+  HMODULE theme = GetModuleHandleW(L"uxtheme.dll");
+  if (!theme)
+    return;
+
+  using SetPreferredAppModeFn = int(WINAPI *)(int);
+  auto setPreferred = reinterpret_cast<SetPreferredAppModeFn>(
+      GetProcAddress(theme, MAKEINTRESOURCEA(135)));
+  auto refresh = reinterpret_cast<void(WINAPI *)()>(
+      GetProcAddress(theme, MAKEINTRESOURCEA(104)));
+  auto flush = reinterpret_cast<void(WINAPI *)()>(
+      GetProcAddress(theme, MAKEINTRESOURCEA(136)));
+  if (setPreferred)
+    setPreferred(1); // AllowDark: follow the system app theme
+  if (refresh)
+    refresh();
+  if (flush)
+    flush();
+}
+
+void AllowDarkModeForWindow(HWND wnd, bool allow) {
+  using Fn = BOOL(WINAPI *)(HWND, BOOL);
+  static auto fn = reinterpret_cast<Fn>(
+      GetProcAddress(GetModuleHandleW(L"uxtheme.dll"), MAKEINTRESOURCEA(133)));
+  if (fn)
+    fn(wnd, allow ? TRUE : FALSE);
+}
+
+enum class ControlKind { Static, Check, Push };
+
+constexpr UINT_PTR kApplySubclassId = 1;
+
+void StyleControl(HWND ctrl, ControlKind kind, bool dark) {
+  if (!ctrl)
+    return;
+  AllowDarkModeForWindow(ctrl, dark);
+  if (kind == ControlKind::Static) {
+    // An empty theme lets WM_CTLCOLORSTATIC supply the text and fill.
+    SetWindowTheme(ctrl, L"", L"");
+  } else if (kind == ControlKind::Push) {
+    // Dark mode paints this button itself. The themed default-button frame
+    // stays bright white and doesn't follow the dark surface. An empty theme
+    // clears visual styles; Explorer puts them back. nullptr does not.
+    if (dark)
+      SetWindowTheme(ctrl, L"", L"");
+    else
+      SetWindowTheme(ctrl, L"Explorer", nullptr);
+  } else if (dark) {
+    SetWindowTheme(ctrl, L"DarkMode_Explorer", nullptr);
+  } else {
+    SetWindowTheme(ctrl, L"Explorer", nullptr);
+  }
+  SendMessageW(ctrl, WM_THEMECHANGED, 0, 0);
+}
+
+void PaintDarkApplyButton(HWND hwnd, const State *st) {
+  PAINTSTRUCT ps{};
+  HDC hdc = BeginPaint(hwnd, &ps);
+  RECT rc{};
+  GetClientRect(hwnd, &rc);
+
+  HDC mem = CreateCompatibleDC(hdc);
+  HBITMAP bmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
+  HGDIOBJ oldBmp = SelectObject(mem, bmp);
+
+  if (st->background)
+    FillRect(mem, &rc, st->background);
+
+  const LRESULT state = SendMessageW(hwnd, BM_GETSTATE, 0, 0);
+  const bool pushed = (state & BST_PUSHED) != 0;
+  const bool focused = (state & BST_FOCUS) != 0;
+  const bool hot = st->applyHot && !pushed;
+  const COLORREF fill = pushed ? RGB(40, 40, 40) : hot ? RGB(64, 64, 64) : RGB(51, 51, 51);
+  const COLORREF edge = hot || pushed ? RGB(120, 120, 120) : RGB(92, 92, 92);
+
+  RECT inner = rc;
+  InflateRect(&inner, -1, -1);
+  HBRUSH fillBrush = CreateSolidBrush(fill);
+  FillRect(mem, &inner, fillBrush);
+  DeleteObject(fillBrush);
+
+  HBRUSH edgeBrush = CreateSolidBrush(edge);
+  FrameRect(mem, &rc, edgeBrush);
+  DeleteObject(edgeBrush);
+
+  SetBkMode(mem, TRANSPARENT);
+  SetTextColor(mem, kDarkText);
+  HFONT font = reinterpret_cast<HFONT>(SendMessageW(hwnd, WM_GETFONT, 0, 0));
+  HGDIOBJ oldFont = font ? SelectObject(mem, font) : nullptr;
+  wchar_t text[32]{};
+  GetWindowTextW(hwnd, text, 32);
+  DrawTextW(mem, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+  if (oldFont)
+    SelectObject(mem, oldFont);
+
+  if (focused) {
+    RECT focus = rc;
+    InflateRect(&focus, -3, -3);
+    DrawFocusRect(mem, &focus);
+  }
+
+  BitBlt(hdc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+  SelectObject(mem, oldBmp);
+  DeleteObject(bmp);
+  DeleteDC(mem);
+  EndPaint(hwnd, &ps);
+}
+
+LRESULT CALLBACK ApplyButtonProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                 UINT_PTR, DWORD_PTR ref) {
+  auto *st = reinterpret_cast<State *>(ref);
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, ApplyButtonProc, kApplySubclassId);
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if (!st || !st->dark)
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+
+  switch (msg) {
+  case WM_PAINT:
+    PaintDarkApplyButton(hwnd, st);
+    return 0;
+  case WM_ERASEBKGND:
+    return 1;
+  case WM_MOUSEMOVE:
+    if (!st->applyHot) {
+      st->applyHot = true;
+      TRACKMOUSEEVENT track{};
+      track.cbSize = sizeof(track);
+      track.dwFlags = TME_LEAVE;
+      track.hwndTrack = hwnd;
+      TrackMouseEvent(&track);
+      InvalidateRect(hwnd, nullptr, FALSE);
+    }
+    break;
+  case WM_MOUSELEAVE:
+    st->applyHot = false;
+    InvalidateRect(hwnd, nullptr, FALSE);
+    break;
+  case WM_LBUTTONDOWN:
+  case WM_LBUTTONUP:
+  case WM_CAPTURECHANGED:
+  case WM_SETFOCUS:
+  case WM_KILLFOCUS:
+    InvalidateRect(hwnd, nullptr, FALSE);
+    break;
+  default:
+    break;
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+void ReleaseBackground(State *st) {
+  if (st->ownsBackground && st->background)
+    DeleteObject(st->background);
+  st->background = nullptr;
+  st->ownsBackground = false;
+}
+
+void UpdateThemeColors(State *st) {
+  st->dark = ShouldUseDarkTheme();
+  ReleaseBackground(st);
+  if (st->dark) {
+    st->background = CreateSolidBrush(kDarkBackground);
+    st->ownsBackground = st->background != nullptr;
+    st->text = kDarkText;
+    st->disabledText = kDarkDisabledText;
+  } else {
+    st->background = GetSysColorBrush(COLOR_WINDOW);
+    st->text = GetSysColor(COLOR_WINDOWTEXT);
+    st->disabledText = GetSysColor(COLOR_GRAYTEXT);
+  }
+}
+
+void StyleAllControls(State *st) {
+  StyleControl(st->title, ControlKind::Static, st->dark);
+  StyleControl(st->hint, ControlKind::Static, st->dark);
+  StyleControl(st->startupCheckbox, ControlKind::Check, st->dark);
+  StyleControl(st->applyButton, ControlKind::Push, st->dark);
+  for (const auto &row : st->monitors) {
+    StyleControl(row.checkbox, ControlKind::Check, st->dark);
+    StyleControl(row.fullWorkCheckbox, ControlKind::Check, st->dark);
+  }
+}
+
+void ApplyTheme(HWND wnd) {
+  auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+  if (!st)
+    return;
+
+  UpdateThemeColors(st);
+
+  BOOL dark = st->dark ? TRUE : FALSE;
+  DwmSetWindowAttribute(wnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+
+  COLORREF caption = st->dark ? kDarkBackground : DWMWA_COLOR_DEFAULT;
+  COLORREF captionText = st->dark ? kDarkText : DWMWA_COLOR_DEFAULT;
+  DwmSetWindowAttribute(wnd, DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
+  DwmSetWindowAttribute(wnd, DWMWA_TEXT_COLOR, &captionText, sizeof(captionText));
+
+  AllowDarkModeForWindow(wnd, st->dark);
+  SetWindowTheme(wnd, st->dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+  StyleAllControls(st);
+
+  RedrawWindow(wnd, nullptr, nullptr,
+               RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
 }
 
 HFONT CreateMessageFont(UINT dpi) {
@@ -193,6 +446,7 @@ void ApplyWindowIcons(HWND wnd, State *st, UINT dpi) {
 void OnCreate(HWND wnd) {
   auto *st = new State();
   SetWindowLongPtrW(wnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(st));
+  UpdateThemeColors(st);
 
   UINT dpi = GetWindowDpi(wnd);
   ApplyWindowIcons(wnd, st, dpi);
@@ -266,8 +520,11 @@ void OnCreate(HWND wnd) {
       0, L"BUTTON", L"Apply", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, 0, 0, 0,
       0, wnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_APPLY)), hInst,
       nullptr);
+  SetWindowSubclass(st->applyButton, ApplyButtonProc, kApplySubclassId,
+                    reinterpret_cast<DWORD_PTR>(st));
 
   Layout(wnd, st, dpi);
+  ApplyTheme(wnd);
 }
 
 void OnApply(HWND wnd) {
@@ -300,6 +557,46 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   case WM_CREATE:
     OnCreate(wnd);
     return 0;
+
+  case WM_ERASEBKGND: {
+    auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+    if (!st || !st->background)
+      return DefWindowProcW(wnd, msg, wParam, lParam);
+    RECT rc{};
+    GetClientRect(wnd, &rc);
+    FillRect(reinterpret_cast<HDC>(wParam), &rc, st->background);
+    return 1;
+  }
+
+  case WM_CTLCOLORSTATIC: {
+    auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+    HDC hdc = reinterpret_cast<HDC>(wParam);
+    HWND ctrl = reinterpret_cast<HWND>(lParam);
+    SetBkMode(hdc, TRANSPARENT);
+
+    wchar_t cls[16]{};
+    GetClassNameW(ctrl, cls, 16);
+    const bool button = lstrcmpiW(cls, L"Button") == 0;
+    // Light checkboxes paint their own label. Dark mode supplies the color so
+    // a disabled checkbox uses gray instead of the theme's black text.
+    if (!button || (st && st->dark)) {
+      const bool enabled = IsWindowEnabled(ctrl) != FALSE;
+      const COLORREF color =
+          st ? (enabled ? st->text : st->disabledText)
+             : GetSysColor(enabled ? COLOR_WINDOWTEXT : COLOR_GRAYTEXT);
+      SetTextColor(hdc, color);
+    }
+    HBRUSH brush = (st && st->background) ? st->background
+                                          : GetSysColorBrush(COLOR_WINDOW);
+    return reinterpret_cast<LRESULT>(brush);
+  }
+
+  case WM_SETTINGCHANGE:
+    if (wParam == SPI_SETHIGHCONTRAST ||
+        (lParam && lstrcmpiW(reinterpret_cast<LPCWSTR>(lParam),
+                             L"ImmersiveColorSet") == 0))
+      ApplyTheme(wnd);
+    return DefWindowProcW(wnd, msg, wParam, lParam);
 
   case WM_COMMAND: {
     auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
@@ -358,6 +655,9 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         DestroyIcon(st->iconSmall);
       if (st->font)
         DeleteObject(st->font);
+      if (st->applyButton)
+        RemoveWindowSubclass(st->applyButton, ApplyButtonProc, kApplySubclassId);
+      ReleaseBackground(st);
       delete st;
     }
     SetWindowLongPtrW(wnd, GWLP_USERDATA, 0);
@@ -372,6 +672,8 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 } // namespace
 
 HWND Create(HINSTANCE hInstance) {
+  EnableDarkModeSupport();
+
   WNDCLASSW existing{};
   if (!GetClassInfoW(hInstance, kClassName, &existing)) {
     WNDCLASSW wc{};
