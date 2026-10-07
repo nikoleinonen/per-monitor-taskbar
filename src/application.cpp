@@ -16,10 +16,10 @@ constexpr UINT kTrayIconId = 1;
 
 constexpr UINT_PTR kEnforceTimerId = 1;
 constexpr UINT_PTR kDisplayChangeTimerId = 2;
+constexpr UINT_PTR kTrayIconTimerId = 3;
 
 constexpr const wchar_t *kHostClassName = L"PerMonitorTaskbarHost";
-constexpr const wchar_t *kRunKey =
-    L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+constexpr const wchar_t *kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr const wchar_t *kRunValueName = L"PerMonitorTaskbar";
 
 UINT DpiForWindow(HWND hwnd) {
@@ -64,18 +64,24 @@ HICON LoadResourceIcon(HINSTANCE instance, WORD id, int cx) {
 WORD TrayIconResource() {
   // 0 = dark taskbar, 1 = light taskbar. Missing value matches the Windows 11 default.
   RegKey key;
-  if (key.Open(HKEY_CURRENT_USER,
-               L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize")) {
+  if (key.Open(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize")) {
     if (auto theme = key.ReadDword(L"SystemUsesLightTheme"))
       return *theme != 0 ? IDI_TRAY_LIGHT : IDI_TRAY_DARK;
   }
   return IDI_TRAY_DARK;
 }
 
-HICON LoadSizedTrayIcon(HINSTANCE instance) {
+struct TrayIconSpec {
+  WORD id = IDI_TRAY_DARK;
+  int cx = 0;
+};
+
+TrayIconSpec CurrentTrayIconSpec() {
   HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
-  int cx = MetricForDpi(SM_CXSMICON, DpiForWindow(tray));
-  return LoadResourceIcon(instance, TrayIconResource(), cx);
+  TrayIconSpec spec;
+  spec.id = TrayIconResource();
+  spec.cx = MetricForDpi(SM_CXSMICON, DpiForWindow(tray));
+  return spec;
 }
 
 } // namespace
@@ -123,6 +129,7 @@ int Application::Run() {
   }
 
   KillTimer(hostWindow_, kEnforceTimerId);
+  KillTimer(hostWindow_, kTrayIconTimerId);
   taskbar::RestoreAll();
   RemoveTrayIcon();
   return static_cast<int>(msg.wParam);
@@ -138,7 +145,8 @@ void Application::ShowSettings() {
 }
 
 void Application::AddTrayIcon() {
-  HICON icon = LoadSizedTrayIcon(hInstance_);
+  TrayIconSpec spec = CurrentTrayIconSpec();
+  HICON icon = LoadResourceIcon(hInstance_, spec.id, spec.cx);
 
   NOTIFYICONDATAW nid{};
   nid.cbSize = sizeof(nid);
@@ -161,11 +169,17 @@ void Application::AddTrayIcon() {
     if (trayIcon_)
       DestroyIcon(trayIcon_);
     trayIcon_ = icon;
+    trayIconId_ = spec.id;
+    trayIconPx_ = spec.cx;
   }
 }
 
 void Application::RefreshTrayIcon() {
-  HICON icon = LoadSizedTrayIcon(hInstance_);
+  TrayIconSpec spec = CurrentTrayIconSpec();
+  if (trayIcon_ && spec.id == trayIconId_ && spec.cx == trayIconPx_)
+    return;
+
+  HICON icon = LoadResourceIcon(hInstance_, spec.id, spec.cx);
   if (!icon)
     return;
 
@@ -183,6 +197,8 @@ void Application::RefreshTrayIcon() {
   if (trayIcon_)
     DestroyIcon(trayIcon_);
   trayIcon_ = icon;
+  trayIconId_ = spec.id;
+  trayIconPx_ = spec.cx;
 }
 
 void Application::RemoveTrayIcon() {
@@ -196,6 +212,8 @@ void Application::RemoveTrayIcon() {
     DestroyIcon(trayIcon_);
     trayIcon_ = nullptr;
   }
+  trayIconId_ = 0;
+  trayIconPx_ = 0;
 }
 
 void Application::ShowTrayMenu() {
@@ -292,14 +310,23 @@ LRESULT CALLBACK Application::HostWndProc(HWND hwnd, UINT msg, WPARAM wParam,
   case WM_SETTINGCHANGE:
     // Applying preferences on a work-area change would show every taskbar.
     // Enforce() expands the work area again if Explorer reserved the gap.
-    if (wParam == SPI_SETWORKAREA)
+    // The tray icon still follows the taskbar's DPI, after the move settles.
+    if (wParam == SPI_SETWORKAREA) {
+      SetTimer(hwnd, kTrayIconTimerId, 500, nullptr);
       return 0;
+    }
     SetTimer(hwnd, kDisplayChangeTimerId, 500, nullptr);
     return 0;
 
   case WM_TIMER:
     if (wParam == kEnforceTimerId) {
       taskbar::Enforce();
+      return 0;
+    }
+    if (wParam == kTrayIconTimerId) {
+      KillTimer(hwnd, kTrayIconTimerId);
+      if (app)
+        app->RefreshTrayIcon();
       return 0;
     }
     if (wParam == kDisplayChangeTimerId) {

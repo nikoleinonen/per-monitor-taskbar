@@ -37,5 +37,7 @@ private:
   HWND hostWindow_ = nullptr;
   HWND settingsWindow_ = nullptr;
   HICON trayIcon_ = nullptr;
+  WORD trayIconId_ = 0;
+  int trayIconPx_ = 0;
   UINT taskbarCreatedMsg_ = 0;
 };
