@@ -112,7 +112,7 @@ The app turns **off** the global Windows auto-hide state (`SHAppBarMessage` / ap
 
 A **50 ms** timer polls the cursor. If the pointer lies in a **48 px** hot zone above the bottom edge of a monitor whose taskbar is managed, the bar is shown (styles restored and redrawn). When the cursor leaves that zone and is not over the taskbar, the bar is hidden again.
 
-If **Maximized windows cover the taskbar area** is on for that monitor, the app sets that monitor's work area to the full display (`SPI_SETWORKAREA`, session only, without a system-wide broadcast — Explorer would treat a broadcast as a request to reserve the taskbar gap again). Hovering the bottom edge raises the taskbar above the maximized window.
+If **Maximized windows cover the taskbar area** is on for that monitor, the app sets that monitor's work area to the full display (`SPI_SETWORKAREA`, session only, without a system-wide broadcast - Explorer would treat a broadcast as a request to reserve the taskbar gap again). Hovering the bottom edge raises the taskbar above the maximized window.
 
 Preferences are stored in the registry:
 
