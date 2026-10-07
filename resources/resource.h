@@ -1,5 +1,9 @@
 #pragma once
 
+#define IDI_APP 1
+#define IDI_TRAY_DARK 2
+#define IDI_TRAY_LIGHT 3
+
 #define IDC_STATIC_TITLE 1001
 #define IDC_STARTUP 1002
 #define IDC_APPLY 1003

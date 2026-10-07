@@ -27,6 +27,7 @@ private:
                                       LPARAM lParam);
 
   void AddTrayIcon();
+  void RefreshTrayIcon();
   void RemoveTrayIcon();
   void ShowTrayMenu();
 
@@ -35,5 +36,6 @@ private:
   HINSTANCE hInstance_ = nullptr;
   HWND hostWindow_ = nullptr;
   HWND settingsWindow_ = nullptr;
+  HICON trayIcon_ = nullptr;
   UINT taskbarCreatedMsg_ = 0;
 };

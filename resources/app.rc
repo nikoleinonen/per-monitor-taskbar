@@ -4,6 +4,10 @@
 // Embed application manifest
 1 24 "app.manifest"
 
+IDI_APP ICON "app.ico"
+IDI_TRAY_DARK ICON "tray_dark.ico"
+IDI_TRAY_LIGHT ICON "tray_light.ico"
+
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION 1,1,0,0
 PRODUCTVERSION 1,1,0,0

@@ -4,6 +4,7 @@
 #include "resource.h"
 #include "taskbar.h"
 
+#include <commctrl.h>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,29 @@ UINT GetWindowDpi(HWND hwnd) {
 
 int Scale(int value, UINT dpi) { return MulDiv(value, dpi, 96); }
 
+int MetricForDpi(int metric, UINT dpi) {
+  using Fn = int(WINAPI *)(int, UINT);
+  static auto fn = reinterpret_cast<Fn>(GetProcAddress(
+      GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
+  if (fn) {
+    int value = fn(metric, dpi);
+    if (value > 0)
+      return value;
+  }
+  return GetSystemMetrics(metric);
+}
+
+HICON LoadResourceIcon(HINSTANCE instance, WORD id, int cx) {
+  HICON icon = nullptr;
+  if (SUCCEEDED(LoadIconWithScaleDown(instance, MAKEINTRESOURCEW(id), cx, cx,
+                                      &icon)) &&
+      icon)
+    return icon;
+
+  return static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(id),
+                                       IMAGE_ICON, cx, cx, LR_DEFAULTCOLOR));
+}
+
 struct MonitorRow {
   HWND checkbox = nullptr;
   HWND fullWorkCheckbox = nullptr;
@@ -38,13 +62,43 @@ struct State {
   HWND startupCheckbox = nullptr;
   bool originalStartup = false;
   HFONT font = nullptr;
+  HICON iconBig = nullptr;
+  HICON iconSmall = nullptr;
 };
+
+void ApplyWindowIcons(HWND wnd, State *st, UINT dpi) {
+  HINSTANCE instance = GetModuleHandleW(nullptr);
+  if (Application *app = Application::Get())
+    instance = app->GetInstance();
+  HICON big = LoadResourceIcon(instance, IDI_APP, MetricForDpi(SM_CXICON, dpi));
+  HICON small =
+      LoadResourceIcon(instance, IDI_APP, MetricForDpi(SM_CXSMICON, dpi));
+  if (!big && !small)
+    return;
+
+  if (big)
+    SendMessageW(wnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big));
+  if (small)
+    SendMessageW(wnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small));
+
+  if (big) {
+    if (st->iconBig)
+      DestroyIcon(st->iconBig);
+    st->iconBig = big;
+  }
+  if (small) {
+    if (st->iconSmall)
+      DestroyIcon(st->iconSmall);
+    st->iconSmall = small;
+  }
+}
 
 void OnCreate(HWND wnd) {
   auto *st = new State();
   SetWindowLongPtrW(wnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(st));
 
   UINT dpi = GetWindowDpi(wnd);
+  ApplyWindowIcons(wnd, st, dpi);
   auto s = [dpi](int v) { return Scale(v, dpi); };
 
   NONCLIENTMETRICSW ncm{};
@@ -202,9 +256,22 @@ LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return 0;
   }
 
+  case WM_DPICHANGED: {
+    auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
+    if (st)
+      ApplyWindowIcons(wnd, st, LOWORD(wParam));
+    return DefWindowProcW(wnd, msg, wParam, lParam);
+  }
+
   case WM_DESTROY: {
     auto *st = reinterpret_cast<State *>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
     if (st) {
+      SendMessageW(wnd, WM_SETICON, ICON_BIG, 0);
+      SendMessageW(wnd, WM_SETICON, ICON_SMALL, 0);
+      if (st->iconBig)
+        DestroyIcon(st->iconBig);
+      if (st->iconSmall)
+        DestroyIcon(st->iconSmall);
       if (st->font)
         DeleteObject(st->font);
       delete st;
@@ -229,6 +296,7 @@ HWND Create(HINSTANCE hInstance) {
     wc.lpszClassName = kClassName;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APP));
     if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
       return nullptr;
   }

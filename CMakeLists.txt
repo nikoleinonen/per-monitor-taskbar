@@ -30,6 +30,7 @@ target_link_libraries(per-monitor-taskbar PRIVATE
   User32
   Gdi32
   Advapi32
+  Comctl32
 )
 
 if(MSVC)
