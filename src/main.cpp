@@ -3,7 +3,7 @@
 
 #include <windows.h>
 
-LONG WINAPI CrashHandler(EXCEPTION_POINTERS*) {
+LONG WINAPI CrashHandler(EXCEPTION_POINTERS *) {
   taskbar::RestoreAll();
   return EXCEPTION_CONTINUE_SEARCH;
 }

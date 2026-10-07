@@ -1,0 +1,12 @@
+CompileFlags:
+  Add:
+    - -std=c++17
+    - -xc++
+    - -DUNICODE
+    - -D_UNICODE
+    - -DWIN32_LEAN_AND_MEAN
+    - -DNOMINMAX
+    - -I../resources
+  Remove:
+    - -std=c++14
+    - -xobjective-c++-header

@@ -6,7 +6,7 @@ namespace monitor {
 
 namespace {
 
-std::wstring ResolveFriendlyName(const wchar_t* gdiDeviceName) {
+std::wstring ResolveFriendlyName(const wchar_t *gdiDeviceName) {
   DISPLAY_DEVICEW adapter{};
   adapter.cb = sizeof(adapter);
 
@@ -16,7 +16,6 @@ std::wstring ResolveFriendlyName(const wchar_t* gdiDeviceName) {
     if (_wcsicmp(adapter.DeviceName, gdiDeviceName) != 0)
       continue;
 
-    // Found the matching adapter -- get the first active monitor's name
     DISPLAY_DEVICEW mon{};
     mon.cb = sizeof(mon);
     for (DWORD mi = 0; EnumDisplayDevicesW(adapter.DeviceName, mi, &mon, 0);
@@ -28,7 +27,6 @@ std::wstring ResolveFriendlyName(const wchar_t* gdiDeviceName) {
         return name;
     }
 
-    // No child monitor entry -- fall back to adapter description
     std::wstring name = adapter.DeviceString;
     if (!name.empty())
       return name;
@@ -38,9 +36,8 @@ std::wstring ResolveFriendlyName(const wchar_t* gdiDeviceName) {
   return gdiDeviceName ? gdiDeviceName : L"Unknown";
 }
 
-BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC, LPRECT,
-                              LPARAM lParam) {
-  auto* results = reinterpret_cast<std::vector<Info>*>(lParam);
+BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) {
+  auto *results = reinterpret_cast<std::vector<Info> *>(lParam);
 
   MONITORINFOEXW mi{};
   mi.cbSize = sizeof(mi);
@@ -65,13 +62,11 @@ std::vector<Info> Enumerate() {
   EnumDisplayMonitors(nullptr, nullptr, MonitorEnumProc,
                       reinterpret_cast<LPARAM>(&results));
 
-  // Primary monitor first, then sorted by device name
-  std::sort(results.begin(), results.end(),
-            [](const Info& a, const Info& b) {
-              if (a.isPrimary != b.isPrimary)
-                return a.isPrimary;
-              return a.deviceName < b.deviceName;
-            });
+  std::sort(results.begin(), results.end(), [](const Info &a, const Info &b) {
+    if (a.isPrimary != b.isPrimary)
+      return a.isPrimary;
+    return a.deviceName < b.deviceName;
+  });
 
   return results;
 }
