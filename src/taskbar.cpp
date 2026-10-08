@@ -17,11 +17,10 @@ namespace {
 
 constexpr const wchar_t *kAppKey = L"Software\\PerMonitorTaskbar";
 constexpr const wchar_t *kPrefsKey = L"Software\\PerMonitorTaskbar\\Monitors";
-constexpr const wchar_t *kFullWorkAreaKey =
-    L"Software\\PerMonitorTaskbar\\FullWorkArea";
-constexpr const wchar_t *kWorkAreaKey =
-    L"Software\\PerMonitorTaskbar\\WorkArea";
+constexpr const wchar_t *kFullWorkAreaKey = L"Software\\PerMonitorTaskbar\\FullWorkArea";
+constexpr const wchar_t *kWorkAreaKey = L"Software\\PerMonitorTaskbar\\WorkArea";
 constexpr int kHotZonePixels = 48;
+constexpr int kEdgeHotZonePixels = 2;
 
 struct TaskbarWindow {
   HWND hwnd;
@@ -115,7 +114,8 @@ bool IsCursorInHotZone(const POINT &pt, const ManagedTaskbar &mt) {
   // Stay inside this monitor. A stacked display below shares this bottom
   // edge, so y >= bottom - hotZone without an upper bound would treat the
   // entire monitor below as a reveal zone.
-  return pt.y >= mt.monitorBounds.bottom - kHotZonePixels &&
+  const int zone = mt.fullWorkArea ? kEdgeHotZonePixels : kHotZonePixels;
+  return pt.y >= mt.monitorBounds.bottom - zone &&
          pt.y < mt.monitorBounds.bottom;
 }
 
