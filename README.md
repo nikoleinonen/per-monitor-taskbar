@@ -20,7 +20,7 @@ I made this tool for myself after getting an OLED monitor and decided to make it
 
 **This tool - Maximized windows cover the taskbar area ON** - Placing a cursor near the bottom edge; the taskbar shows and hides instantaneously. Maximized windows will fully extend into the taskbar area.
 
-[![Per-monitor auto-hide](https://i.imgur.com/fZW7F5n.gif)](https://imgur.com/fZW7F5n)
+[![Per-monitor auto-hide](https://i.imgur.com/WiETuUH.gif)](https://imgur.com/WiETuUH)
 
 **Windows built-in auto-hide** - Same interaction, but noticeably slower and less responsive garbage. Maximized windows will fully extend into the taskbar area.
 
@@ -37,7 +37,7 @@ I made this tool for myself after getting an OLED monitor and decided to make it
 
 ## Download
 
-Prebuilt binaries are published on the [Releases](https://github.com/nikoleinonen/per-monitor-taskbar/releases/latest) page. Download `PMT-1.2.exe` and run it; there is no installer.
+Prebuilt binaries are published on the [Releases](https://github.com/nikoleinonen/per-monitor-taskbar/releases/latest) page. Download `PMT-1.2.1.exe` and run it; there is no installer.
 
 **SmartScreen:** Unsigned executables often trigger a first-run warning. Click **More info**, then **Run anyway**, or build from source and compare hashes if you prefer. Third-party scanners such as [VirusTotal](https://www.virustotal.com/gui/home/upload) can be used for an additional check.
 
@@ -77,12 +77,12 @@ Prebuilt binaries are published on the [Releases](https://github.com/nikoleinone
 3. **Output:** 
    
     ```text
-   build/Release/PMT-1.2.exe
+   build/Release/PMT-1.2.1.exe
     ```
 
 ## Usage
 
-1. Start `PMT-1.2.exe`. An icon appears in the notification area.
+1. Start `PMT-1.2.1.exe`. An icon appears in the notification area.
 2. **Left-click** the icon to open Settings, or **right-click** for the context menu.
 3. Enable **Auto-hide** per monitor as needed.
 4. Optionally turn on **Maximized windows cover the taskbar area** to fill that display fully. If its off, maximized windows do not cover the taskbar area.
@@ -101,7 +101,7 @@ There is no separate uninstaller. To remove the program cleanly:
 2. Choose **Reset everything** so taskbars are restored and preferences under `HKCU\Software\PerMonitorTaskbar` are cleared.
 3. If you enabled **Start with Windows**, open **Settings** from the tray (left-click), turn that option off, and click **Apply** so the startup entry is removed.
 4. **Right-click** the tray icon again and choose **Exit**.
-5. Delete `PMT-1.2.exe` from your computer.
+5. Delete `PMT-1.2.1.exe` from your computer.
 
 ## How it works
 
@@ -114,9 +114,9 @@ The app turns **off** the global Windows auto-hide state (`SHAppBarMessage` / ap
 | Secondary | `Shell_SecondaryTrayWnd` | Same in-place transparency as primary. Sliding a secondary bar below the monitor edge would paint it onto any display stacked underneath. |
 
 
-A **50 ms** timer polls the cursor. If the pointer lies in a **48 px** hot zone above the bottom edge of a monitor whose taskbar is managed, the bar is shown (styles restored and redrawn). When the cursor leaves that zone and is not over the taskbar, the bar is hidden again.
+A **50 ms** timer polls the cursor. If the pointer lies in a hot zone above the bottom edge of a monitor whose taskbar is managed, the bar is shown (styles restored and redrawn). That zone is **48 px** tall, the same as the default Windows 11 taskbar, so the reserved gap is easy to hit. When the cursor leaves that zone and is not over the taskbar, the bar is hidden again.
 
-If **Maximized windows cover the taskbar area** is on for that monitor, the app sets that monitor's work area to the full display (`SPI_SETWORKAREA`, session only, without a system-wide broadcast - Explorer would treat a broadcast as a request to reserve the taskbar gap again). Hovering the bottom edge raises the taskbar above the maximized window.
+If **Maximized windows cover the taskbar area** is on for that monitor, the app sets that monitor's work area to the full display (`SPI_SETWORKAREA`, session only, without a system-wide broadcast - Explorer would treat a broadcast as a request to reserve the taskbar gap again). The reveal zone on that display shrinks to a **2 px** slice at the very bottom edge, so the rest of the strip the taskbar used to occupy stays clickable on the maximized window. Pushing the cursor into that slice raises the taskbar above the window.
 
 Preferences are stored in the registry:
 

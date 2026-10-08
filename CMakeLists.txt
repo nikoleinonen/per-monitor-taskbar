@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Short version used in the binary name: PMT-<version>.exe
-set(PMT_VERSION "1.2")
+set(PMT_VERSION "1.2.1")
 
 project(per-monitor-taskbar VERSION ${PMT_VERSION}.0 LANGUAGES CXX RC)
 
